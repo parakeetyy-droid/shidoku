@@ -94,16 +94,18 @@ repo without the owner asking.
 Repo layout (current):
 ```
 shidoku/
-├── index.html      ← full app (Ask-only, English-only)
-├── server.js       ← relay + static server
+├── index.html      ← full app (Ask-only, English-only, vendor-neutral)
+├── server.py       ← relay + static server (Gemini brain since 2026-07-09;
+│                      replaced the original node server.js)
+├── manifest.json / icon-*.png
 ├── CLAUDE.md       ← invariants for future sessions (authoritative)
 ├── HANDOFF.md      ← this file (historical design record)
 └── Caddyfile.example
 ```
 ## 6. Deployment (owner's environment)
-1. `console.anthropic.com` → create API key (billing is pay-as-you-go, separate
-   from the Claude subscription; a few cents per analysis).
-2. Copy the repo to the VPS. `ANTHROPIC_API_KEY=sk-ant-... node server.js`
+1. Get an API key for the brain in server.py (since 2026-07-09: Gemini —
+   aistudio.google.com; pay-as-you-go, separate from any chat subscription).
+2. Copy the repo to the VPS. `GEMINI_API_KEY=... python3 server.py`
    (long-run with pm2 or a systemd unit carrying the env var).
 3. Caddy (or nginx+certbot) in front for HTTPS — the camera requires a secure
    context, this is not optional.

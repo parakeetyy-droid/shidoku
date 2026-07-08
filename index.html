@@ -219,10 +219,8 @@
 <script>
 // ═══════════════ config — edit freely ═══════════════
 const RELAY      = "/api/claude";
-const MODEL      = "claude-sonnet-5";
 const MAX_TOKENS = 4000;
-// Sonnet 5 runs adaptive thinking by default; disabled here for fast camera answers.
-// Delete the THINKING line in callAPI() to let Claude think (slower, deeper).
+// The model itself is chosen in server.py on the VPS — this app is vendor-neutral.
 const ASK_PROMPT = `You are the engine behind a personal Visual Intelligence camera. Analyze the photo and lead with what actually matters in it.
 
 - Say what it shows: object, scene, sign, poster, screen, document, or book page. Use precise names (species, brand, model, title, place) and state your confidence when identification is not certain.
@@ -381,10 +379,7 @@ function showErr(msg, retryFn){
 function scrollEnd(){ requestAnimationFrame(()=>{ thread.scrollTop=thread.scrollHeight; }); }
 
 async function callAPI(msgs){
-  const body={
-    model:MODEL, max_tokens:MAX_TOKENS, messages:msgs,
-    thinking:{type:"disabled"} // THINKING: delete this line for adaptive thinking
-  };
+  const body={ max_tokens:MAX_TOKENS, messages:msgs };
   const res=await fetch(RELAY,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
   const data=await res.json();
   if(data.error) throw new Error(data.error.message||data.error.type);

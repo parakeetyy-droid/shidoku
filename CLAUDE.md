@@ -20,20 +20,26 @@ deliberate stub.** Do not add features unprompted.
 - `<video>` needs `playsinline muted autoplay`; layout uses viewport-fit=cover + env(safe-area-inset-*).
 
 ## Architecture
-- index.html (whole app, vanilla JS) → same-origin POST /api/claude → server.js
-  (dependency-free node relay: static files + forward to api.anthropic.com with
-  x-api-key + anthropic-version 2023-06-01). API key ONLY in the ANTHROPIC_API_KEY
-  env var on the VPS — never in client code.
-- Response contract: concatenate content blocks with type === "text".
+- index.html (whole app, vanilla JS) → same-origin POST /api/claude → server.py
+  (stdlib-only Python relay: serves static files AND translates the app's
+  vendor-neutral body into an OpenAI-style chat request aimed at Gemini's
+  OpenAI-compatible endpoint, generativelanguage.googleapis.com). API key ONLY
+  in the GEMINI_API_KEY env var on the VPS — never in client code.
+- The CLIENT is vendor-neutral (Anthropic-shaped content blocks; response contract:
+  concatenate content blocks with type === "text"; errors read from error.message).
+  Changing the brain vendor = editing server.py's UPSTREAM/MODEL/translation only.
+- Brain history: Claude Sonnet 5 (v1) → Gemini (owner's decision 2026-07-09 after
+  his own model research; MODEL default "gemini-3.5-flash" — env-overridable,
+  confirm the exact id in AI Studio).
 - Multi-turn: resend the full messages array; the image rides only in the first user message.
-- Config knobs at the top of index.html's script: RELAY, MODEL (claude-sonnet-5),
-  MAX_TOKENS, ASK_PROMPT. Thinking is explicitly disabled in callAPI() for speed —
-  delete that line to enable adaptive thinking.
+- Config knobs: RELAY, MAX_TOKENS, ASK_PROMPT at the top of index.html's script;
+  MODEL + UPSTREAM at the top of server.py.
 
 ## Deploy
-VPS: `ANTHROPIC_API_KEY=sk-ant-... node server.js` (pm2/systemd), Caddy for HTTPS,
-then iPhone Safari → Allow camera → Add to Home Screen. Owner is in mainland China:
-the phone talks only to the VPS; the VPS talks to api.anthropic.com.
+VPS: `GEMINI_API_KEY=... python3 server.py` (systemd/pm2; python3 is preinstalled
+on any distro — nothing to install), Caddy for HTTPS, then iPhone Safari → Allow
+camera → Add to Home Screen. Owner is in mainland China: the phone talks only to
+the VPS; the VPS talks to Google. Local test: `python server.py --key X --port 8790`.
 
 ## History
 HANDOFF.md is the original design record. Its §2 constraints and §3 architecture
