@@ -273,7 +273,9 @@ let frozenB64=null, messages=[], loading=false, pendingAsk=false;
 async function startCamera(){
   if(starting || live || frozenB64) return;
   if(!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)){
-    enterFallback("Live view isn't supported in this browser.<br>The shutter and Ask open the system camera instead.");
+    enterFallback(window.isSecureContext
+      ? "Live view isn't supported in this browser.<br>The shutter and Ask open the system camera instead."
+      : "This address is HTTP, so iOS hides the live camera.<br>Open the https:// address to get the live viewfinder.<br>The shutter and Ask still open the system camera.");
     return;
   }
   starting=true;
