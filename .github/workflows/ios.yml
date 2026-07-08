@@ -47,7 +47,10 @@ jobs:
       - name: Build unsigned app
         run: |
           cd ios/App
-          xcodebuild -workspace App.xcworkspace -scheme App -configuration Release -sdk iphoneos \
+          ls -la
+          if [ -e App.xcworkspace ]; then TARGET="-workspace App.xcworkspace"; else TARGET="-project App.xcodeproj"; fi
+          xcodebuild $TARGET -scheme App -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
 
