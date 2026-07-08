@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Shidoku">
+<meta name="theme-color" content="#000000">
+<title>Shidoku</title>
+<style>
+  :root{
+    --sheet:#17191D; --line:rgba(255,255,255,.13); --ink:#F2EFE8; --dim:#9AA0A8;
+    --accent:#E3B94F; --err:#E08A7E; --glass:rgba(28,30,34,.55);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    background:#000; color:var(--ink); overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  }
+  .serif{font-family:Georgia,"Times New Roman",serif}
+  button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+  input{font-family:inherit}
+  input::placeholder{color:#8B9099}
+  ::-webkit-scrollbar{display:none}
+
+  /* ── camera screen ── */
+  #cam{position:fixed;inset:0}
+  #vf{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;display:none}
+  #frozen{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;transition:filter .3s}
+  #frozen.dim{filter:brightness(.45)}
+  #statusPill{
+    position:absolute;top:calc(14px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);
+    z-index:5;font-size:12px;color:var(--dim);background:rgba(16,18,21,.6);padding:6px 13px;
+    border-radius:999px;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);white-space:nowrap;
+  }
+  #retake{
+    position:absolute;top:calc(10px + env(safe-area-inset-top));right:14px;z-index:5;display:none;
+    width:38px;height:38px;border-radius:999px;background:var(--glass);
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+    align-items:center;justify-content:center;
+  }
+  #idleHint{
+    position:absolute;inset:0;z-index:1;display:flex;align-items:center;justify-content:center;
+    text-align:center;padding:0 44px;color:var(--dim);font-size:13px;line-height:1.9;
+    letter-spacing:.02em;pointer-events:none;
+  }
+
+  /* ── bottom bar: Ask · shutter · Search ── */
+  #bar{
+    position:absolute;left:0;right:0;bottom:0;z-index:4;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:26px 46px calc(52px + env(safe-area-inset-bottom));
+    background:linear-gradient(to top, rgba(0,0,0,.55), rgba(0,0,0,0));
+  }
+  .side{position:relative;display:flex;align-items:center;justify-content:center;width:54px;height:54px}
+  .side .circ{
+    width:54px;height:54px;border-radius:999px;background:var(--glass);
+    -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+    border:.5px solid rgba(255,255,255,.14);
+    display:flex;align-items:center;justify-content:center;
+  }
+  .side:active .circ{background:rgba(64,66,70,.6)}
+  .side .lbl{
+    position:absolute;top:calc(100% + 9px);left:50%;transform:translateX(-50%);
+    font-size:14px;color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.7);white-space:nowrap;
+  }
+  #shutter{
+    position:relative;width:78px;height:78px;border-radius:999px;
+    border:4px solid rgba(255,255,255,.92);
+    box-shadow:0 0 26px rgba(255,175,205,.32), inset 0 0 12px rgba(255,190,215,.22);
+  }
+  #shutter::after{content:"";position:absolute;inset:5px;border-radius:999px;background:#fff}
+  #shutter:active{transform:scale(.95)}
+  #shutter:active::after{background:#E9E6E0}
+  #cam.isFrozen #shutter{visibility:hidden}
+
+  /* ── Ask sheet ── */
+  #sheet{
+    position:fixed;left:0;right:0;bottom:0;z-index:10;display:none;flex-direction:column;
+    max-height:70%;background:rgba(23,25,29,.97);border-radius:20px 20px 0 0;
+    border-top:.5px solid rgba(255,255,255,.1);box-shadow:0 -12px 42px rgba(0,0,0,.55);
+    padding-bottom:calc(10px + env(safe-area-inset-bottom));
+    -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+  }
+  #sheet.open{display:flex}
+  #sheetHead{display:flex;align-items:center;justify-content:space-between;padding:13px 16px 6px}
+  #sheetTitle{font-size:11px;letter-spacing:.18em;color:var(--dim)}
+  #sheetClose{
+    width:30px;height:30px;border-radius:999px;background:rgba(255,255,255,.08);
+    display:flex;align-items:center;justify-content:center;
+  }
+  #thread{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:2px 18px}
+  .userMsg{display:flex;justify-content:flex-end;margin:10px 0}
+  .userMsg>div{background:#2B2F36;border-radius:14px;padding:8px 13px;font-size:15px;max-width:85%;line-height:1.5}
+  .ans{font-size:16px;line-height:1.75;padding:6px 0 2px}
+  .ans p{margin:5px 0}
+  .ans .gap{height:9px}
+  .ans .hd{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:12.5px;letter-spacing:.09em;color:var(--accent);margin:13px 0 5px;font-weight:600;
+  }
+  .ans .bl{display:flex;gap:9px;margin:4px 0}
+  .ans .bl span:first-child{color:var(--accent);flex-shrink:0}
+  .ans strong{font-weight:600;color:var(--ink)}
+  .tools{display:flex;justify-content:flex-end;gap:8px;margin:4px 0 10px}
+  .toolBtn{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:8px;padding:4px 11px;
+  }
+  .toolBtn.ok{color:#9BC4AF}
+  #loadRow{display:none;align-items:center;gap:10px;padding:6px 18px 10px;color:var(--dim);font-size:13px}
+  #loadRow.show{display:flex}
+  .pulse{width:8px;height:8px;border-radius:999px;background:var(--accent);animation:pw 1.1s ease-in-out infinite}
+  @keyframes pw{0%,100%{opacity:.25}50%{opacity:1}}
+  @media (prefers-reduced-motion: reduce){.pulse{animation:none;opacity:.9}}
+  #errRow{display:none;color:var(--err);font-size:13px;line-height:1.6;padding:4px 18px 8px;align-items:center;gap:10px;flex-wrap:wrap}
+  #errRow.show{display:flex}
+  #inRow{display:flex;gap:9px;padding:8px 16px 4px}
+  #inp{
+    flex:1;background:rgba(255,255,255,.07);border:1px solid var(--line);border-radius:999px;
+    padding:11px 17px;color:var(--ink);font-size:16px;outline:none;min-width:0;
+  }
+  #send{
+    width:44px;height:44px;border-radius:999px;background:var(--accent);flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;
+  }
+  #send:disabled{opacity:.4}
+
+  /* ── toast ── */
+  #toast{
+    position:fixed;left:50%;bottom:calc(170px + env(safe-area-inset-bottom));transform:translateX(-50%);
+    z-index:20;background:rgba(25,27,31,.94);border:.5px solid var(--line);color:var(--ink);
+    padding:9px 17px;border-radius:999px;font-size:13px;white-space:nowrap;
+    opacity:0;pointer-events:none;transition:opacity .25s;
+  }
+  #toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<div id="cam">
+  <video id="vf" playsinline muted autoplay></video>
+  <img id="frozen" alt="">
+  <div id="statusPill">Starting camera&#8230;</div>
+  <button id="retake" aria-label="Back to camera">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+  </button>
+  <div id="idleHint">Requesting camera access &#8212; tap Allow once.<br>Every launch after that opens straight to the live viewfinder.</div>
+
+  <div id="bar">
+    <button class="side" id="askBtn" aria-label="Ask">
+      <span class="circ">
+        <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 6A2.5 2.5 0 0 1 6.5 3.5h11A2.5 2.5 0 0 1 20 6v7.5a2.5 2.5 0 0 1-2.5 2.5H13l-4 4v-4H6.5A2.5 2.5 0 0 1 4 13.5z"/>
+          <line x1="8.2" y1="8.4" x2="15.8" y2="8.4"/><line x1="8.2" y1="11.4" x2="13.6" y2="11.4"/>
+        </svg>
+      </span>
+      <span class="lbl">Ask</span>
+    </button>
+
+    <button id="shutter" aria-label="Capture"></button>
+
+    <button class="side" id="searchBtn" aria-label="Search">
+      <span class="circ">
+        <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3.2" y="4.4" width="13.6" height="11.6" rx="2.4"/>
+          <path d="M5.6 13.2l3.1-3.1 2.4 2.4"/>
+          <circle cx="16.9" cy="15.9" r="3.4"/>
+          <line x1="19.4" y1="18.4" x2="21.4" y2="20.4"/>
+        </svg>
+      </span>
+      <span class="lbl">Search</span>
+    </button>
+  </div>
+</div>
+
+<div id="sheet">
+  <div id="sheetHead">
+    <span id="sheetTitle">ASK &#183; CLAUDE</span>
+    <button id="sheetClose" aria-label="Close">
+      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+  <div id="thread"></div>
+  <div id="loadRow"><span class="pulse"></span><span>Thinking&#8230;</span></div>
+  <div id="errRow"></div>
+  <div id="inRow">
+    <input id="inp" placeholder="Ask a follow-up&#8230;" enterkeyhint="send">
+    <button id="send" aria-label="Send">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#1A1608" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6.5 11.5L12 6l5.5 5.5"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<input type="file" id="camInput" accept="image/*" capture="environment" hidden>
+<canvas id="cv" hidden></canvas>
+
+<script>
+// ═══════════════ config — edit freely ═══════════════
+const RELAY      = "/api/claude";
+const MODEL      = "claude-sonnet-5";
+const MAX_TOKENS = 4000;
+// Sonnet 5 runs adaptive thinking by default; disabled here for fast camera answers.
+// Delete the THINKING line in callAPI() to let Claude think (slower, deeper).
+const ASK_PROMPT = `You are the engine behind a personal Visual Intelligence camera. Analyze the photo and lead with what actually matters in it.
+
+- Say what it shows: object, scene, sign, poster, screen, document, or book page. Use precise names (species, brand, model, title, place) and state your confidence when identification is not certain.
+- If there is text, transcribe the parts that matter. If the text is not English, give a faithful English translation.
+- If it is a poster, notice, ticket, or label, extract the key facts: what, when, where, how much.
+- If something is ambiguous, name the plausible alternatives instead of guessing silently.
+
+Answer in English only. Be direct and mechanism-first: no greetings, no filler, no praise.`;
+// ════════════════════════════════════════════════════
+
+const $ = id => document.getElementById(id);
+const cam=$("cam"), vf=$("vf"), frozen=$("frozen"), statusPill=$("statusPill"),
+      retake=$("retake"), idleHint=$("idleHint"),
+      askBtn=$("askBtn"), shutter=$("shutter"), searchBtn=$("searchBtn"),
+      sheet=$("sheet"), sheetClose=$("sheetClose"), thread=$("thread"),
+      loadRow=$("loadRow"), errRow=$("errRow"), inp=$("inp"), send=$("send"),
+      toast=$("toast"), camInput=$("camInput"), cv=$("cv");
+
+let stream=null, live=false, starting=false, fallback=false;
+let frozenB64=null, messages=[], loading=false, pendingAsk=false;
+
+// ── camera: live on launch, stop when hidden, resume when visible ──
+async function startCamera(){
+  if(starting || live || frozenB64) return;
+  if(!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)){
+    enterFallback("Live view isn't supported in this browser.<br>The shutter and Ask open the system camera instead.");
+    return;
+  }
+  starting=true;
+  statusPill.style.display="block"; statusPill.textContent="Starting camera…";
+  try{
+    const s = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:{ideal:"environment"}, width:{ideal:1920}, height:{ideal:1440} },
+      audio:false
+    });
+    if(document.hidden || frozenB64){ s.getTracks().forEach(t=>t.stop()); return; }
+    stream=s; vf.srcObject=s; vf.style.display="block";
+    vf.play().catch(()=>{}); // don't await: a hidden tab can stall play() forever; autoplay covers playback
+    live=true; fallback=false;
+    statusPill.style.display="none"; idleHint.style.display="none";
+  }catch(e){
+    if(stream) return; // another path already succeeded
+    enterFallback("Live view was blocked ("+e.name+").<br>The shutter and Ask still open the system camera.<br>To enable live view: Settings &#8594; Safari &#8594; Camera &#8594; Allow, then relaunch.");
+  }finally{
+    starting=false;
+  }
+}
+function stopCamera(){
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  live=false; vf.style.display="none";
+}
+function enterFallback(msg){
+  fallback=true; live=false;
+  statusPill.style.display="block"; statusPill.textContent="System camera mode";
+  idleHint.innerHTML=msg; idleHint.style.display="flex";
+}
+document.addEventListener("visibilitychange", ()=>{
+  if(document.visibilityState==="visible" && !frozenB64) startCamera();
+  if(document.visibilityState==="hidden") stopCamera();
+});
+startCamera();
+
+// ── capture ──
+function frameToJpeg(source,w,h){
+  const MAX=1400, s=Math.min(1, MAX/Math.max(w,h));
+  cv.width=Math.round(w*s); cv.height=Math.round(h*s);
+  cv.getContext("2d").drawImage(source,0,0,cv.width,cv.height);
+  const dataUrl=cv.toDataURL("image/jpeg",0.85);
+  return { dataUrl, b64:dataUrl.split(",")[1] };
+}
+function freeze(img){
+  frozenB64=img.b64;
+  frozen.src=img.dataUrl; frozen.style.display="block";
+  stopCamera();
+  cam.classList.add("isFrozen");
+  retake.style.display="flex";
+  statusPill.style.display="none"; idleHint.style.display="none";
+  messages=[]; thread.innerHTML=""; clearErr();
+}
+function unfreeze(){
+  frozenB64=null; messages=[]; thread.innerHTML=""; inp.value=""; clearErr();
+  frozen.style.display="none"; frozen.classList.remove("dim");
+  cam.classList.remove("isFrozen");
+  retake.style.display="none";
+  closeSheet();
+  if(fallback) enterFallback("The shutter and Ask open the system camera.");
+  else startCamera();
+}
+retake.onclick=unfreeze;
+
+shutter.onclick=()=>{
+  if(starting || frozenB64) return;
+  if(live){
+    if(!vf.videoWidth) return;
+    freeze(frameToJpeg(vf, vf.videoWidth, vf.videoHeight));
+  }else{
+    camInput.click(); // capture="environment" opens the rear camera directly on iOS
+  }
+};
+askBtn.onclick=()=>{
+  if(starting) return;
+  if(frozenB64){
+    openSheet();
+    if(!messages.length && !loading) firstAsk();
+  }else if(live){
+    if(!vf.videoWidth) return;
+    freeze(frameToJpeg(vf, vf.videoWidth, vf.videoHeight));
+    openSheet();
+    firstAsk();
+  }else{
+    pendingAsk=true;
+    camInput.click();
+  }
+};
+searchBtn.onclick=()=> showToast("Search isn't wired up yet.");
+
+camInput.onchange=(e)=>{
+  const f=e.target.files && e.target.files[0]; e.target.value="";
+  if(!f){ pendingAsk=false; return; }
+  const url=URL.createObjectURL(f); const im=new Image();
+  im.onload=()=>{
+    const img=frameToJpeg(im, im.naturalWidth, im.naturalHeight);
+    URL.revokeObjectURL(url);
+    freeze(img);
+    if(pendingAsk){ pendingAsk=false; openSheet(); firstAsk(); }
+  };
+  im.onerror=()=>{
+    URL.revokeObjectURL(url); pendingAsk=false;
+    showToast("Couldn't decode that image.");
+  };
+  im.src=url;
+};
+
+// ── Ask sheet ──
+function openSheet(){ sheet.classList.add("open"); frozen.classList.add("dim"); scrollEnd(); }
+function closeSheet(){ sheet.classList.remove("open"); frozen.classList.remove("dim"); }
+sheetClose.onclick=closeSheet;
+
+function setLoading(on){
+  loading=on;
+  loadRow.classList.toggle("show",on);
+  send.disabled=on;
+  scrollEnd();
+}
+function clearErr(){ errRow.classList.remove("show"); errRow.textContent=""; }
+function showErr(msg, retryFn){
+  errRow.textContent="Error: "+msg;
+  if(retryFn){
+    const b=document.createElement("button");
+    b.className="toolBtn"; b.textContent="Retry";
+    b.onclick=()=>{ clearErr(); retryFn(); };
+    errRow.appendChild(b);
+  }
+  errRow.classList.add("show");
+}
+function scrollEnd(){ requestAnimationFrame(()=>{ thread.scrollTop=thread.scrollHeight; }); }
+
+async function callAPI(msgs){
+  const body={
+    model:MODEL, max_tokens:MAX_TOKENS, messages:msgs,
+    thinking:{type:"disabled"} // THINKING: delete this line for adaptive thinking
+  };
+  const res=await fetch(RELAY,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const data=await res.json();
+  if(data.error) throw new Error(data.error.message||data.error.type);
+  const txt=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").trim();
+  if(!txt) throw new Error("The model returned no text.");
+  return txt;
+}
+async function firstAsk(extra){
+  const text = ASK_PROMPT + (extra ? "\n\nThe user also asks: "+extra : "");
+  const first=[{role:"user",content:[
+    {type:"image",source:{type:"base64",media_type:"image/jpeg",data:frozenB64}},
+    {type:"text",text}
+  ]}];
+  setLoading(true); clearErr();
+  try{
+    const txt=await callAPI(first);
+    messages=[...first,{role:"assistant",content:txt}];
+    addAnswer(txt);
+  }catch(e){
+    messages=[];
+    showErr(String(e.message||e), ()=>firstAsk(extra));
+  }finally{ setLoading(false); }
+}
+async function sendFollowUp(){
+  const t=inp.value.trim();
+  if(!t || loading || !frozenB64) return;
+  inp.value="";
+  addUserMsg(t);
+  if(!messages.length){ firstAsk(t); return; } // first ask failed earlier: retry with the question attached
+  setLoading(true); clearErr();
+  const msgs=[...messages,{role:"user",content:t}];
+  try{
+    const txt=await callAPI(msgs);
+    messages=[...msgs,{role:"assistant",content:txt}];
+    addAnswer(txt);
+  }catch(e){ showErr(String(e.message||e)); }
+  finally{ setLoading(false); }
+}
+send.onclick=sendFollowUp;
+inp.addEventListener("keydown",e=>{ if(e.key==="Enter") sendFollowUp(); });
+
+// ── rendering ──
+function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function inlineMd(s){
+  return esc(s)
+    .replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g,"$1<em>$2</em>");
+}
+function mdToHtml(text){
+  return text.split("\n").map(ln=>{
+    const t=ln.trim();
+    if(!t) return '<div class="gap"></div>';
+    if(/^#{1,4}\s/.test(t)) return '<div class="hd">'+inlineMd(t.replace(/^#{1,4}\s/,""))+"</div>";
+    if(/^[-•]\s/.test(t)) return '<div class="bl"><span>&#183;</span><span>'+inlineMd(t.replace(/^[-•]\s/,""))+"</span></div>";
+    const num=t.match(/^(\d+)[.)]\s+(.*)$/);
+    if(num) return '<div class="bl"><span>'+num[1]+'.</span><span>'+inlineMd(num[2])+"</span></div>";
+    return "<p>"+inlineMd(t)+"</p>";
+  }).join("");
+}
+function addUserMsg(t){
+  const d=document.createElement("div"); d.className="userMsg";
+  const inner=document.createElement("div"); inner.textContent=t;
+  d.appendChild(inner); thread.appendChild(d);
+  scrollEnd();
+}
+function addAnswer(text){
+  const a=document.createElement("div"); a.className="ans serif";
+  a.innerHTML=mdToHtml(text);
+  const tools=document.createElement("div"); tools.className="tools";
+  const cp=document.createElement("button"); cp.className="toolBtn"; cp.textContent="Copy";
+  cp.onclick=async()=>{
+    try{ await navigator.clipboard.writeText(text); cp.textContent="Copied"; cp.classList.add("ok"); }
+    catch{ cp.textContent="Long-press to copy"; }
+    setTimeout(()=>{ cp.textContent="Copy"; cp.classList.remove("ok"); },1800);
+  };
+  tools.appendChild(cp);
+  thread.appendChild(a); thread.appendChild(tools);
+  scrollEnd();
+}
+
+// ── toast ──
+let toastT=null;
+function showToast(t){
+  toast.textContent=t; toast.classList.add("show");
+  clearTimeout(toastT);
+  toastT=setTimeout(()=>toast.classList.remove("show"),1900);
+}
+</script>
+</body>
+</html>
