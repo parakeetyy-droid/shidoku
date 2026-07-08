@@ -40,8 +40,13 @@ VPS: `GEMINI_API_KEY=... python3 server.py` (systemd/pm2; python3 is preinstalle
 on any distro — nothing to install), Caddy for HTTPS, then iPhone Safari → Allow
 camera → Add to Home Screen. Owner is in mainland China: the phone talks only to
 the VPS; the VPS talks to Google. Local test: `python server.py --key X --port 8790`;
-add `--host 0.0.0.0` to reach it from the iPhone over LAN (plain HTTP → no live
-viewfinder there; the shutter falls back to the iOS system camera, which is expected).
+add `--host 0.0.0.0` to reach it from the iPhone over LAN. Plain HTTP on the phone =
+NO live viewfinder (secure-context rule — not a UI bug; the shutter falls back to the
+iOS system camera). For the full zero-tap experience over LAN, add
+`--tls C:\Users\Parak\Documents\shidoku-tls` (self-signed cert, SAN-bound to the PC's
+LAN IP — regenerate if the IP changes; phone must trust it once via /ca.crt served
+on PORT+1). Owner's key is free-tier; gemini-3.5-flash 503s under peak load —
+`--model gemini-3.1-flash-lite` (or gemini-flash-latest) is the tested fallback.
 
 ## History
 HANDOFF.md is the original design record. Its §2 constraints and §3 architecture

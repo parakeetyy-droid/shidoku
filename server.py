@@ -13,7 +13,6 @@ import urllib.request
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 UPSTREAM = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-MODEL = os.environ.get("MODEL", "gemini-3.5-flash")  # confirm the exact id in AI Studio
 BASE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -21,9 +20,11 @@ def arg(flag):
     return sys.argv[sys.argv.index(flag) + 1] if flag in sys.argv else None
 
 
+MODEL = arg("--model") or os.environ.get("MODEL", "gemini-3.5-flash")
 KEY = arg("--key") or os.environ.get("GEMINI_API_KEY")
 PORT = int(arg("--port") or os.environ.get("PORT", "8787"))
 HOST = arg("--host") or os.environ.get("HOST", "127.0.0.1")  # 0.0.0.0 = reachable over LAN
+TLS = arg("--tls")  # dir with cert.pem + key.pem -> serves HTTPS, plus http on PORT+1 for /ca.crt
 if not KEY:
     sys.exit("Missing GEMINI_API_KEY")
 
@@ -50,6 +51,18 @@ def to_openai(body):
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=BASE, **kw)
+
+    def do_GET(self):
+        if TLS and self.path == "/ca.crt":  # let the iPhone download the cert to trust
+            with open(os.path.join(TLS, "cert.pem"), "rb") as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-x509-ca-cert")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        super().do_GET()
 
     def send_json(self, status, obj):
         data = json.dumps(obj).encode("utf-8")
@@ -91,5 +104,17 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print("shidoku relay -> http://%s:%d  (model: %s)" % (HOST, PORT, MODEL))
-    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+    httpd = ThreadingHTTPServer((HOST, PORT), Handler)
+    scheme = "http"
+    if TLS:
+        import ssl
+        import threading
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(os.path.join(TLS, "cert.pem"), os.path.join(TLS, "key.pem"))
+        httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
+        scheme = "https"
+        helper = ThreadingHTTPServer((HOST, PORT + 1), Handler)  # plain-http side door for /ca.crt
+        threading.Thread(target=helper.serve_forever, daemon=True).start()
+        print("cert for the phone -> http://%s:%d/ca.crt" % (HOST, PORT + 1))
+    print("shidoku relay -> %s://%s:%d  (model: %s)" % (scheme, HOST, PORT, MODEL))
+    httpd.serve_forever()
