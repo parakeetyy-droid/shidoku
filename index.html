@@ -14,6 +14,7 @@
   :root{
     --sheet:#17191D; --line:rgba(255,255,255,.13); --ink:#F2EFE8; --dim:#9AA0A8;
     --accent:#E3B94F; --err:#E08A7E; --glass:rgba(28,30,34,.55);
+    --sab: env(safe-area-inset-bottom);
   }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   html,body{height:100%}
@@ -521,6 +522,29 @@ function addAnswer(text){
   tools.appendChild(cp);
   thread.appendChild(a); thread.appendChild(tools);
   scrollEnd();
+}
+
+// ── temporary viewport diagnostics: open the app with #debug ──
+if(location.hash.includes("debug")){
+  const d=document.createElement("div");
+  d.style.cssText="position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:99;"+
+    "background:rgba(0,0,0,.75);color:#9BE29B;font:11px/1.6 monospace;padding:8px 10px;"+
+    "border-radius:8px;pointer-events:none;white-space:pre";
+  document.body.appendChild(d);
+  const upd=()=>{
+    const vv=window.visualViewport;
+    d.textContent=
+      "standalone: "+(navigator.standalone===true)+
+      "\ninnerH:     "+window.innerHeight+
+      "\nvisualH:    "+(vv?Math.round(vv.height):"n/a")+
+      "\nclientH:    "+document.documentElement.clientHeight+
+      "\nscreenH:    "+screen.height+" (dpr "+devicePixelRatio+")"+
+      "\ncamH:       "+cam.offsetHeight+
+      "\nvfH:        "+vf.offsetHeight+"  video "+vf.videoWidth+"x"+vf.videoHeight+
+      "\ndvh ok:     "+CSS.supports("height","100dvh")+
+      "\nsafeBottom: "+getComputedStyle(document.documentElement).getPropertyValue("--sab");
+  };
+  upd(); setInterval(upd,800);
 }
 
 // ── toast ──

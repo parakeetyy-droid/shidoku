@@ -52,6 +52,11 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=BASE, **kw)
 
+    def end_headers(self):
+        if self.path.split("?")[0].split("#")[0] in ("/", "/index.html"):
+            self.send_header("Cache-Control", "no-cache")  # always revalidate the app shell
+        super().end_headers()
+
     def do_GET(self):
         if TLS and self.path == "/ca.crt":  # let the iPhone download the cert to trust
             with open(os.path.join(TLS, "cert.pem"), "rb") as f:
