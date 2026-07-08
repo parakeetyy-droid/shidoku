@@ -39,7 +39,9 @@ deliberate stub.** Do not add features unprompted.
 VPS: `GEMINI_API_KEY=... python3 server.py` (systemd/pm2; python3 is preinstalled
 on any distro — nothing to install), Caddy for HTTPS, then iPhone Safari → Allow
 camera → Add to Home Screen. Owner is in mainland China: the phone talks only to
-the VPS; the VPS talks to Google. Local test: `python server.py --key X --port 8790`.
+the VPS; the VPS talks to Google. Local test: `python server.py --key X --port 8790`;
+add `--host 0.0.0.0` to reach it from the iPhone over LAN (plain HTTP → no live
+viewfinder there; the shutter falls back to the iOS system camera, which is expected).
 
 ## History
 HANDOFF.md is the original design record. Its §2 constraints and §3 architecture

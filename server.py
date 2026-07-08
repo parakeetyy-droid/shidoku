@@ -23,6 +23,7 @@ def arg(flag):
 
 KEY = arg("--key") or os.environ.get("GEMINI_API_KEY")
 PORT = int(arg("--port") or os.environ.get("PORT", "8787"))
+HOST = arg("--host") or os.environ.get("HOST", "127.0.0.1")  # 0.0.0.0 = reachable over LAN
 if not KEY:
     sys.exit("Missing GEMINI_API_KEY")
 
@@ -90,5 +91,5 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print("shidoku relay -> http://127.0.0.1:%d  (model: %s)" % (PORT, MODEL))
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    print("shidoku relay -> http://%s:%d  (model: %s)" % (HOST, PORT, MODEL))
+    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
