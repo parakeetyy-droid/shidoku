@@ -1,9 +1,14 @@
-# Shidoku — personal Visual Intelligence PWA (owner: Pakē)
+# Shidoku — personal Visual Intelligence app (owner: Pakē)
 
-Camera-first iPhone home-screen PWA; the analysis brain is the Anthropic API
-behind a VPS relay. v1 is ONE feature: the **Ask** button (Apple Visual
+Camera-first iPhone app; ONE feature: the **Ask** button (Apple Visual
 Intelligence parity: Ask / shutter / Search bottom bar). **Search is a
 deliberate stub.** Do not add features unprompted.
+
+DELIVERY (owner's decision 2026-07-09): **native iOS shell via Capacitor**,
+built unsigned on GitHub macOS runners, sideloaded with AltStore (free Apple ID,
+7-day re-sign). See NATIVE.md for the whole pipeline. The Safari/PWA route is
+abandoned as primary (owner: "too many restrictions") but index.html remains a
+working web app and the single source of truth — the shell wraps it verbatim.
 
 ## Owner rules (non-negotiable)
 - English only — UI, prompts, responses, comments. Zero Chinese or Japanese characters anywhere.

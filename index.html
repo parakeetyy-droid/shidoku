@@ -244,7 +244,10 @@
 
 <script>
 // ═══════════════ config — edit freely ═══════════════
-const RELAY      = "/api/claude";
+// In the native shell (capacitor://) there is no same-origin server, so the
+// relay address must be absolute: the PC on your Wi-Fi for now, the VPS later.
+const NATIVE     = !/^https?:$/.test(location.protocol);
+const RELAY      = NATIVE ? "http://192.168.0.102:8790/api/claude" : "/api/claude";
 const MAX_TOKENS = 4000;
 // The model itself is chosen in server.py on the VPS — this app is vendor-neutral.
 const ASK_PROMPT = `You are the engine behind a personal Visual Intelligence camera. Analyze the photo and lead with what actually matters in it.

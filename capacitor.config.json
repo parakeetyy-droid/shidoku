@@ -1,0 +1,11 @@
+{
+  "appId": "com.pake.shidoku",
+  "appName": "Shidoku",
+  "webDir": "www",
+  "backgroundColor": "#000000",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#000000",
+    "preferredContentMode": "mobile"
+  }
+}
