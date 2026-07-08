@@ -1,3 +1,4 @@
+# Build recipe: unsigned IPA for AltStore sideloading
 name: iOS build (unsigned IPA for AltStore)
 
 on:
