@@ -20,7 +20,7 @@ def arg(flag):
     return sys.argv[sys.argv.index(flag) + 1] if flag in sys.argv else None
 
 
-MODEL = arg("--model") or os.environ.get("MODEL", "gemini-3.5-flash")
+MODEL = arg("--model") or os.environ.get("MODEL", "gemini-3.1-flash-lite")  # free-tier reliable/fast; gemini-3.5-flash is richer but 503s/times out on the free tier
 KEY = arg("--key") or os.environ.get("GEMINI_API_KEY")
 PORT = int(arg("--port") or os.environ.get("PORT", "8787"))
 HOST = arg("--host") or os.environ.get("HOST", "127.0.0.1")  # 0.0.0.0 = reachable over LAN
