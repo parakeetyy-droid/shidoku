@@ -261,6 +261,16 @@ const ASK_PROMPT = `You are the engine behind a personal Visual Intelligence cam
 Answer in English only. Be direct and mechanism-first: no greetings, no filler, no praise.`;
 // ════════════════════════════════════════════════════
 
+// ── simulator (?sim): force the real-camera path to fail so the app never grabs
+//    a webcam in the desktop frame. The bottom sim block then paints sample.jpg
+//    into the viewfinder and wires the shutter / Ask to it. Never runs outside
+//    ?sim — the native shell and the phone have no ?sim in their URL.
+const SIM = new URLSearchParams(location.search).has("sim");
+if(SIM){
+  const md = navigator.mediaDevices || (navigator.mediaDevices = {});
+  md.getUserMedia = ()=>Promise.reject(new DOMException("sim","NotFoundError"));
+}
+
 const $ = id => document.getElementById(id);
 const cam=$("cam"), vf=$("vf"), frozen=$("frozen"), statusPill=$("statusPill"),
       retake=$("retake"), idleHint=$("idleHint"),
@@ -528,10 +538,25 @@ function addAnswer(text){
   scrollEnd();
 }
 
-// ── simulator support: ?sim applies iPhone 17e safe areas (47/34) on desktop ──
-if(new URLSearchParams(location.search).has("sim")){
+// ── simulator support (?sim): iPhone 17e safe areas + sample-photo viewfinder ──
+if(SIM){
   document.documentElement.style.setProperty("--sat","47px");
   document.documentElement.style.setProperty("--sab","34px");
+  // take over the camera: no restarts, no fallback chrome, paint the sample scene
+  startCamera=()=>{}; enterFallback=()=>{};
+  statusPill.style.display="none"; idleHint.style.display="none";
+  cam.style.background="#0B0D10 url('sample.jpg') center/cover no-repeat";
+  let simFrame=null;
+  const im=new Image();
+  im.onload=()=>{ simFrame=frameToJpeg(im,im.naturalWidth,im.naturalHeight); };
+  im.src="sample.jpg";
+  // shutter and Ask capture the sample, exercising the real freeze/analyze path
+  shutter.onclick=()=>{ if(frozenB64||!simFrame) return; freeze(simFrame); };
+  askBtn.onclick=()=>{
+    if(frozenB64){ openSheet(); if(!messages.length && !loading) firstAsk(); return; }
+    if(!simFrame) return;
+    freeze(simFrame); openSheet(); firstAsk();
+  };
 }
 
 // ── temporary viewport diagnostics: open the app with #debug ──
