@@ -16,10 +16,10 @@
     --accent:#E3B94F; --err:#E08A7E; --glass:rgba(28,30,34,.55);
     --sat: env(safe-area-inset-top);
     --sab: env(safe-area-inset-bottom);
-    /* ── Liquid Glass material ── */
-    --lg-fill: linear-gradient(155deg, rgba(255,255,255,.22), rgba(178,184,196,.06) 46%, rgba(16,18,22,.12));
-    --lg-blur: blur(18px) saturate(185%);
-    --lg-shadow: 0 6px 22px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.5), inset 0 -14px 30px rgba(255,255,255,.05);
+    /* ── Liquid Glass material (soft, refined) ── */
+    --lg-fill: linear-gradient(150deg, rgba(255,255,255,.15), rgba(205,210,220,.05) 48%, rgba(18,20,24,.085));
+    --lg-blur: blur(22px) saturate(140%);
+    --lg-shadow: 0 5px 18px rgba(0,0,0,.26), inset 0 1px 0 rgba(255,255,255,.34), inset 0 -12px 26px rgba(255,255,255,.035);
   }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   html,body{height:100%}
@@ -88,19 +88,26 @@
     position:absolute;top:calc(100% + 9px);left:50%;transform:translateX(-50%);
     font-size:15px;color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.7);white-space:nowrap;
   }
-  #shutter{position:relative;width:78px;height:78px;border-radius:999px;padding:0;transition:transform .3s cubic-bezier(.34,1.56,.64,1)}
+  #shutter{
+    position:relative;width:78px;height:78px;border-radius:999px;padding:0;
+    -webkit-backdrop-filter:blur(8px) saturate(130%);backdrop-filter:blur(8px) saturate(130%);
+    box-shadow:0 6px 20px rgba(0,0,0,.28);
+    transition:transform .3s cubic-bezier(.34,1.56,.64,1);
+  }
   #shutter .ring{
     position:absolute;inset:0;border-radius:999px;
-    background:conic-gradient(from 180deg, #FF9AC2, #C08CFF, #86B8FF, #FFD08A, #FF9AC2);
-    box-shadow:0 0 26px rgba(198,140,255,.45);
-    animation:rspin 7s linear infinite;
+    background:conic-gradient(from 180deg, #FFB3D0, #CBA6FF, #A6CCFF, #FFDFA6, #FFB3D0);
+    opacity:.62;filter:blur(.4px);
+    box-shadow:inset 0 2px 3px rgba(255,255,255,.55), inset 0 -3px 8px rgba(0,0,0,.14), 0 0 22px rgba(198,140,255,.3);
+    animation:rspin 8s linear infinite;
   }
   #shutter .core{
-    position:absolute;inset:6px;border-radius:999px;background:#fff;
-    border:3px solid rgba(8,9,11,.85);
+    position:absolute;inset:7px;border-radius:999px;
+    background:radial-gradient(125% 125% at 32% 26%, rgba(255,255,255,.98), rgba(236,239,243,.82));
+    box-shadow:inset 0 2px 3px rgba(255,255,255,.9), inset 0 -8px 15px rgba(0,0,0,.06), 0 1px 6px rgba(0,0,0,.2);
   }
   #shutter:active{transform:scale(.95)}
-  #shutter:active .core{background:#E9E6E0}
+  #shutter:active .core{background:radial-gradient(125% 125% at 32% 26%, rgba(240,240,236,.98), rgba(222,224,228,.82))}
   @keyframes rspin{to{transform:rotate(360deg)}}
   #cam.isFrozen #shutter{visibility:hidden}
   #glow{
@@ -199,15 +206,15 @@
 
   /* ── Liquid Glass edge: specular rim (::before) + gloss highlight (::after) ── */
   .circ::before, #statusPill::before, #retake::before, #sheetClose::before, #toast::before, #sheet::before{
-    content:"";position:absolute;inset:0;border-radius:inherit;padding:1.1px;pointer-events:none;
-    background:linear-gradient(155deg, rgba(255,255,255,.95), rgba(255,255,255,.18) 24%, rgba(255,255,255,0) 50%, rgba(255,255,255,.10) 74%, rgba(255,255,255,.6));
+    content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;
+    background:linear-gradient(150deg, rgba(255,255,255,.7), rgba(255,255,255,.1) 28%, rgba(255,255,255,0) 54%, rgba(255,255,255,.05) 78%, rgba(255,255,255,.38));
     -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
             mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite:xor;mask-composite:exclude;
   }
   .circ::after, #statusPill::after, #retake::after, #sheetClose::after, #toast::after{
-    content:"";position:absolute;left:12%;right:12%;top:7%;height:42%;border-radius:inherit;pointer-events:none;
-    background:linear-gradient(rgba(255,255,255,.32), rgba(255,255,255,0));filter:blur(2px);opacity:.72;
+    content:"";position:absolute;left:15%;right:15%;top:6%;height:36%;border-radius:inherit;pointer-events:none;
+    background:linear-gradient(rgba(255,255,255,.22), rgba(255,255,255,0));filter:blur(3px);opacity:.55;
   }
 
   /* ── Liquid Glass edge: specular rim + gloss highlight ── */
