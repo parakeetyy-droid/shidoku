@@ -14,6 +14,7 @@
   :root{
     --sheet:#17191D; --line:rgba(255,255,255,.13); --ink:#F2EFE8; --dim:#9AA0A8;
     --accent:#E3B94F; --err:#E08A7E; --glass:rgba(28,30,34,.55);
+    --sat: env(safe-area-inset-top);
     --sab: env(safe-area-inset-bottom);
   }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -40,12 +41,12 @@
   #blink.go{animation:blinkA .22s ease-out}
   @keyframes blinkA{from{opacity:.65}to{opacity:0}}
   #statusPill{
-    position:absolute;top:calc(14px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);
+    position:absolute;top:calc(14px + var(--sat));left:50%;transform:translateX(-50%);
     z-index:5;font-size:12px;color:var(--dim);background:rgba(16,18,21,.6);padding:6px 13px;
     border-radius:999px;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);white-space:nowrap;
   }
   #retake{
-    position:absolute;top:calc(10px + env(safe-area-inset-top));right:14px;z-index:5;display:none;
+    position:absolute;top:calc(10px + var(--sat));right:14px;z-index:5;display:none;
     width:38px;height:38px;border-radius:999px;background:var(--glass);
     -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
     align-items:center;justify-content:center;
@@ -62,7 +63,7 @@
   #bar{
     position:absolute;left:0;right:0;bottom:0;z-index:4;
     display:flex;align-items:center;justify-content:space-between;
-    padding:26px 46px calc(52px + env(safe-area-inset-bottom));
+    padding:26px 46px calc(52px + var(--sab));
     background:linear-gradient(to top, rgba(0,0,0,.62), rgba(0,0,0,0));
   }
   .side{position:relative;display:flex;align-items:center;justify-content:center;width:54px;height:54px}
@@ -107,7 +108,7 @@
     position:fixed;left:0;right:0;bottom:0;z-index:10;display:flex;flex-direction:column;
     max-height:70%;background:rgba(23,25,29,.97);border-radius:22px 22px 0 0;
     border-top:.5px solid rgba(255,255,255,.1);box-shadow:0 -12px 42px rgba(0,0,0,.55);
-    padding-bottom:calc(10px + env(safe-area-inset-bottom));
+    padding-bottom:calc(10px + var(--sab));
     -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
     transform:translateY(105%);visibility:hidden;will-change:transform;
     transition:transform .46s cubic-bezier(.32,.72,0,1), visibility 0s linear .46s;
@@ -170,7 +171,7 @@
 
   /* ── toast ── */
   #toast{
-    position:fixed;left:50%;bottom:calc(170px + env(safe-area-inset-bottom));transform:translateX(-50%);
+    position:fixed;left:50%;bottom:calc(170px + var(--sab));transform:translateX(-50%);
     z-index:20;background:rgba(25,27,31,.94);border:.5px solid var(--line);color:var(--ink);
     padding:9px 17px;border-radius:999px;font-size:13px;white-space:nowrap;
     opacity:0;pointer-events:none;transition:opacity .25s;
@@ -527,10 +528,16 @@ function addAnswer(text){
   scrollEnd();
 }
 
+// ── simulator support: ?sim applies iPhone 17e safe areas (47/34) on desktop ──
+if(new URLSearchParams(location.search).has("sim")){
+  document.documentElement.style.setProperty("--sat","47px");
+  document.documentElement.style.setProperty("--sab","34px");
+}
+
 // ── temporary viewport diagnostics: open the app with #debug ──
 if(location.hash.includes("debug")){
   const d=document.createElement("div");
-  d.style.cssText="position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:99;"+
+  d.style.cssText="position:fixed;top:calc(10px + var(--sat));left:10px;z-index:99;"+
     "background:rgba(0,0,0,.75);color:#9BE29B;font:11px/1.6 monospace;padding:8px 10px;"+
     "border-radius:8px;pointer-events:none;white-space:pre";
   document.body.appendChild(d);
