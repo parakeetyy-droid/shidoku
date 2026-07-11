@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
-# Shidoku relay -- serves the app and forwards /api/claude to Gemini
-# (via Google's OpenAI-compatible endpoint). The API key lives ONLY here,
-# in an environment variable -- never in the browser.
+# Shidoku relay -- serves the app and streams /api/claude through Gemini's
+# NATIVE endpoint with Google Search grounding enabled. The API key lives
+# ONLY here, in an environment variable -- never in the browser.
+#
+# Wire protocol to the app (NDJSON, one JSON object per line):
+#   {"t":"delta","text":"..."}            incremental answer text
+#   {"t":"sources","items":[{title,url}]} web sources, when the model searched
+#   {"t":"done"}                          end of answer
+#   {"t":"error","message":"..."}         upstream/relay failure
 #
 # Run (VPS):    GEMINI_API_KEY=...  python3 server.py
 # Run (local):  python3 server.py --key TEST --port 8790
@@ -12,7 +18,7 @@ import urllib.error
 import urllib.request
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-UPSTREAM = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+UPSTREAM_BASE = os.environ.get("UPSTREAM", "https://generativelanguage.googleapis.com/v1beta")
 BASE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -20,7 +26,7 @@ def arg(flag):
     return sys.argv[sys.argv.index(flag) + 1] if flag in sys.argv else None
 
 
-MODEL = arg("--model") or os.environ.get("MODEL", "gemini-3.1-flash-lite")  # free-tier reliable/fast; gemini-3.5-flash is richer but 503s/times out on the free tier
+MODEL = arg("--model") or os.environ.get("MODEL", "gemini-3.1-flash-lite")  # free-tier reliable/fast
 KEY = arg("--key") or os.environ.get("GEMINI_API_KEY")
 PORT = int(arg("--port") or os.environ.get("PORT", "8787"))
 HOST = arg("--host") or os.environ.get("HOST", "127.0.0.1")  # 0.0.0.0 = reachable over LAN
@@ -29,23 +35,29 @@ if not KEY:
     sys.exit("Missing GEMINI_API_KEY")
 
 
-def to_openai(body):
-    """Translate the app's vendor-neutral request body into OpenAI chat format."""
-    messages = []
+def to_gemini(body):
+    """Translate the app's vendor-neutral request body into native Gemini format."""
+    contents = []
     for m in body.get("messages", []):
-        content = m.get("content")
-        if isinstance(content, list):
-            parts = []
-            for block in content:
+        role = "model" if m.get("role") == "assistant" else "user"
+        parts = []
+        c = m.get("content")
+        if isinstance(c, list):
+            for block in c:
                 if block.get("type") == "text":
-                    parts.append({"type": "text", "text": block["text"]})
+                    parts.append({"text": block["text"]})
                 elif block.get("type") == "image":
                     src = block["source"]
-                    parts.append({"type": "image_url", "image_url": {
-                        "url": "data:%s;base64,%s" % (src["media_type"], src["data"])}})
-            content = parts
-        messages.append({"role": m["role"], "content": content})
-    return {"model": MODEL, "max_tokens": body.get("max_tokens", 2000), "messages": messages}
+                    parts.append({"inline_data": {
+                        "mime_type": src["media_type"], "data": src["data"]}})
+        else:
+            parts.append({"text": c})
+        contents.append({"role": role, "parts": parts})
+    return {
+        "contents": contents,
+        "tools": [{"google_search": {}}],  # grounding: the model searches when facts/names matter
+        "generationConfig": {"maxOutputTokens": body.get("max_tokens", 2000)},
+    }
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -84,16 +96,52 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", "0"))
             body = json.loads(self.rfile.read(length))
+        except Exception as e:
+            self.send_json(400, {"error": {"message": "bad request: %s" % e}})
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+
+        def emit(obj):
+            self.wfile.write((json.dumps(obj) + "\n").encode("utf-8"))
+            self.wfile.flush()
+
+        try:
+            url = "%s/models/%s:streamGenerateContent?alt=sse" % (UPSTREAM_BASE, MODEL)
             req = urllib.request.Request(
-                UPSTREAM,
-                data=json.dumps(to_openai(body)).encode("utf-8"),
-                headers={"Content-Type": "application/json",
-                         "Authorization": "Bearer " + KEY},
+                url,
+                data=json.dumps(to_gemini(body)).encode("utf-8"),
+                headers={"Content-Type": "application/json", "x-goog-api-key": KEY},
             )
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                upstream = json.load(resp)
-            text = (upstream.get("choices") or [{}])[0].get("message", {}).get("content") or ""
-            self.send_json(200, {"content": [{"type": "text", "text": text}]})
+            sources, seen = [], set()
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                for raw in resp:
+                    line = raw.decode("utf-8", "replace").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    payload = line[5:].strip()
+                    if not payload or payload == "[DONE]":
+                        continue
+                    chunk = json.loads(payload)
+                    for cand in chunk.get("candidates", []):
+                        for part in cand.get("content", {}).get("parts", []):
+                            if part.get("thought"):
+                                continue  # internal reasoning of thinking models
+                            if part.get("text"):
+                                emit({"t": "delta", "text": part["text"]})
+                        gm = cand.get("groundingMetadata") or {}
+                        for gc in gm.get("groundingChunks", []):
+                            web = gc.get("web") or {}
+                            uri = web.get("uri")
+                            if uri and uri not in seen:
+                                seen.add(uri)
+                                sources.append({"title": web.get("title") or uri, "url": uri})
+            if sources:
+                emit({"t": "sources", "items": sources[:6]})
+            emit({"t": "done"})
         except urllib.error.HTTPError as e:
             raw = e.read().decode("utf-8", "replace")
             try:
@@ -103,9 +151,17 @@ class Handler(SimpleHTTPRequestHandler):
                 msg = err.get("error", {}).get("message") or raw[:300]
             except Exception:
                 msg = raw[:300] or ("upstream HTTP %s" % e.code)
-            self.send_json(e.code, {"error": {"message": msg}})
+            try:
+                emit({"t": "error", "message": msg})
+            except Exception:
+                pass
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+            pass  # the app went away mid-stream; nothing to do
         except Exception as e:
-            self.send_json(502, {"error": {"message": "relay: %s" % e}})
+            try:
+                emit({"t": "error", "message": "relay: %s" % e})
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
@@ -121,5 +177,5 @@ if __name__ == "__main__":
         helper = ThreadingHTTPServer((HOST, PORT + 1), Handler)  # plain-http side door for /ca.crt
         threading.Thread(target=helper.serve_forever, daemon=True).start()
         print("cert for the phone -> http://%s:%d/ca.crt" % (HOST, PORT + 1))
-    print("shidoku relay -> %s://%s:%d  (model: %s)" % (scheme, HOST, PORT, MODEL))
+    print("shidoku relay -> %s://%s:%d  (model: %s, grounded, streaming)" % (scheme, HOST, PORT, MODEL))
     httpd.serve_forever()

@@ -144,7 +144,7 @@
   #thread{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:2px 18px;overscroll-behavior:contain;scroll-behavior:smooth}
   .userMsg{display:flex;justify-content:flex-end;margin:10px 0}
   .userMsg>div{background:#2B2F36;border-radius:14px;padding:8px 13px;font-size:15px;max-width:85%;line-height:1.5}
-  .userMsg,.ans,.tools{animation:riseIn .32s cubic-bezier(.2,.7,.2,1) both}
+  .userMsg,.ans,.tools,.srcRow{animation:riseIn .32s cubic-bezier(.2,.7,.2,1) both}
   @keyframes riseIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
   .ans{font-size:16px;line-height:1.75;padding:6px 0 2px}
   .ans p{margin:5px 0}
@@ -165,12 +165,21 @@
     box-shadow:inset 0 1px 0 rgba(255,255,255,.35), inset 0 0 0 .5px rgba(255,255,255,.1), 0 2px 8px rgba(0,0,0,.2);
   }
   .toolBtn.ok{color:#9BC4AF}
+  .srcRow{display:flex;flex-wrap:wrap;gap:7px;margin:2px 0 4px}
+  .srcChip{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:11px;color:var(--dim);text-decoration:none;padding:5px 12px;border-radius:999px;
+    background:var(--lg-fill);
+    -webkit-backdrop-filter:blur(12px) saturate(140%);backdrop-filter:blur(12px) saturate(140%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.28), inset 0 0 0 .5px rgba(255,255,255,.09), 0 2px 8px rgba(0,0,0,.18);
+    max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
   #loadRow{display:none;align-items:center;gap:10px;padding:6px 18px 10px;color:var(--dim);font-size:13px}
   #loadRow.show{display:flex}
   .pulse{width:8px;height:8px;border-radius:999px;background:var(--accent);animation:pw 1.1s ease-in-out infinite}
   @keyframes pw{0%,100%{opacity:.25}50%{opacity:1}}
   @media (prefers-reduced-motion: reduce){
-    .pulse,#glow,#shutter .ring,.userMsg,.ans,.tools,#frozen,#blink{animation:none}
+    .pulse,#glow,#shutter .ring,.userMsg,.ans,.tools,.srcRow,#frozen,#blink{animation:none}
     #sheet,#sheet.open{transition:none}
     .pulse{opacity:.9}
   }
@@ -305,14 +314,19 @@ const NATIVE     = !/^https?:$/.test(location.protocol);
 const RELAY      = NATIVE ? "http://192.168.0.102:8790/api/claude" : "/api/claude";
 const MAX_TOKENS = 4000;
 // The model itself is chosen in server.py on the VPS — this app is vendor-neutral.
-const ASK_PROMPT = `You are the engine behind a personal Visual Intelligence camera. Analyze the photo and lead with what actually matters in it.
+const ASK_PROMPT = `You are the engine behind a personal Visual Intelligence camera, built for an advanced English learner who wants to know what things are really called in American English.
 
-- Say what it shows: object, scene, sign, poster, screen, document, or book page. Use precise names (species, brand, model, title, place) and state your confidence when identification is not certain.
-- If there is text, transcribe the parts that matter. If the text is not English, give a faithful English translation.
-- If it is a poster, notice, ticket, or label, extract the key facts: what, when, where, how much.
-- If something is ambiguous, name the plausible alternatives instead of guessing silently.
+Lead with the everyday American name of the main subject - the word a native speaker would actually say at home or in a store, including genericized brand names (a pocket pack of tissues is "Kleenex", cotton swabs are "Q-tips", adhesive bandages are "Band-Aids", sticky notes are "Post-its"). If the everyday name and the precise name differ, give both.
 
-Answer in English only. Be direct and mechanism-first: no greetings, no filler, no praise.`;
+Then, briefly:
+- One or two natural collocations or verb pairings a native speaker would use with it.
+- If there is text in the photo, transcribe the important part; translate non-English text into English.
+- For posters, tickets, and labels: the key facts (what, when, where, how much).
+- If identification is uncertain, say so and name the plausible alternatives.
+
+When the exact name, brand, or a current fact matters, verify with Google Search before answering rather than guessing.
+
+Keep the whole answer compact - a few short lines. Go deeper only when asked a follow-up. English only. No greetings, no filler, no praise.`;
 // ════════════════════════════════════════════════════
 
 // ── simulator (?sim): force the real-camera path to fail so the app never grabs
@@ -510,14 +524,51 @@ function showErr(msg, retryFn){
 }
 function scrollEnd(){ requestAnimationFrame(()=>{ thread.scrollTop=thread.scrollHeight; }); }
 
-async function callAPI(msgs){
+async function callAPIStream(msgs, onDelta){
   const body={ max_tokens:MAX_TOKENS, messages:msgs };
   const res=await fetch(RELAY,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-  const data=await res.json();
-  if(data.error) throw new Error(data.error.message||data.error.type);
-  const txt=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").trim();
-  if(!txt) throw new Error("The model returned no text.");
-  return txt;
+  if(!res.ok || !res.body){
+    let msg="HTTP "+res.status;
+    try{ const d=await res.json(); if(d.error) msg=d.error.message||msg; }catch(_){}
+    throw new Error(msg);
+  }
+  const reader=res.body.getReader(), dec=new TextDecoder();
+  let buf="", full="", sources=null, errMsg=null;
+  for(;;){
+    const {done,value}=await reader.read();
+    if(done) break;
+    buf+=dec.decode(value,{stream:true});
+    let nl;
+    while((nl=buf.indexOf("\n"))>=0){
+      const line=buf.slice(0,nl).trim(); buf=buf.slice(nl+1);
+      if(!line) continue;
+      let ev; try{ ev=JSON.parse(line); }catch(_){ continue; }
+      if(ev.t==="delta"){ full+=ev.text; onDelta(full); }
+      else if(ev.t==="sources"){ sources=ev.items; }
+      else if(ev.t==="error"){ errMsg=ev.message; }
+    }
+  }
+  if(errMsg && !full) throw new Error(errMsg);
+  if(!full.trim()) throw new Error("The model returned no text.");
+  return { text: full.trim(), sources, error: errMsg };
+}
+async function streamInto(msgs){
+  const a=document.createElement("div"); a.className="ans serif";
+  thread.appendChild(a);
+  let started=false;
+  try{
+    const r=await callAPIStream(msgs, full=>{
+      if(!started){ started=true; loadRow.classList.remove("show"); }
+      a.innerHTML=mdToHtml(full);
+      scrollEnd();
+    });
+    finishAnswer(a, r.text, r.sources);
+    if(r.error) showErr(r.error); // stream broke after partial text: keep it, surface the cause
+    return r.text;
+  }catch(e){
+    a.remove();
+    throw e;
+  }
 }
 async function firstAsk(extra){
   const text = ASK_PROMPT + (extra ? "\n\nThe user also asks: "+extra : "");
@@ -527,9 +578,8 @@ async function firstAsk(extra){
   ]}];
   setLoading(true); clearErr();
   try{
-    const txt=await callAPI(first);
+    const txt=await streamInto(first);
     messages=[...first,{role:"assistant",content:txt}];
-    addAnswer(txt);
   }catch(e){
     messages=[];
     showErr(String(e.message||e), ()=>firstAsk(extra));
@@ -544,9 +594,8 @@ async function sendFollowUp(){
   setLoading(true); clearErr();
   const msgs=[...messages,{role:"user",content:t}];
   try{
-    const txt=await callAPI(msgs);
+    const txt=await streamInto(msgs);
     messages=[...msgs,{role:"assistant",content:txt}];
-    addAnswer(txt);
   }catch(e){ showErr(String(e.message||e)); }
   finally{ setLoading(false); }
 }
@@ -577,9 +626,18 @@ function addUserMsg(t){
   d.appendChild(inner); thread.appendChild(d);
   scrollEnd();
 }
-function addAnswer(text){
-  const a=document.createElement("div"); a.className="ans serif";
+function finishAnswer(a, text, sources){
   a.innerHTML=mdToHtml(text);
+  if(sources && sources.length){
+    const s=document.createElement("div"); s.className="srcRow";
+    sources.forEach(it=>{
+      const l=document.createElement("a");
+      l.className="srcChip"; l.href=it.url; l.target="_blank"; l.rel="noopener";
+      l.textContent=(it.title||"source").replace(/^www\./,"");
+      s.appendChild(l);
+    });
+    thread.appendChild(s);
+  }
   const tools=document.createElement("div"); tools.className="tools";
   const cp=document.createElement("button"); cp.className="toolBtn"; cp.textContent="Copy";
   cp.onclick=async()=>{
@@ -588,7 +646,7 @@ function addAnswer(text){
     setTimeout(()=>{ cp.textContent="Copy"; cp.classList.remove("ok"); },1800);
   };
   tools.appendChild(cp);
-  thread.appendChild(a); thread.appendChild(tools);
+  thread.appendChild(tools);
   scrollEnd();
 }
 

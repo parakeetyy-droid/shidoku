@@ -27,18 +27,28 @@ working web app and the single source of truth — the shell wraps it verbatim.
 ## Architecture
 - index.html (whole app, vanilla JS) → same-origin POST /api/claude → server.py
   (stdlib-only Python relay: serves static files AND translates the app's
-  vendor-neutral body into an OpenAI-style chat request aimed at Gemini's
-  OpenAI-compatible endpoint, generativelanguage.googleapis.com). API key ONLY
-  in the GEMINI_API_KEY env var on the VPS — never in client code.
-- The CLIENT is vendor-neutral (Anthropic-shaped content blocks; response contract:
-  concatenate content blocks with type === "text"; errors read from error.message).
-  Changing the brain vendor = editing server.py's UPSTREAM/MODEL/translation only.
-- Brain history: Claude Sonnet 5 (v1) → Gemini (owner's decision 2026-07-09 after
-  his own model research; MODEL default "gemini-3.5-flash" — env-overridable,
-  confirm the exact id in AI Studio).
+  vendor-neutral body into NATIVE Gemini `streamGenerateContent?alt=sse` with
+  **Google Search grounding** (`tools:[{google_search:{}}]`) always enabled —
+  the model searches when names/facts matter and returns citations). API key
+  ONLY in the GEMINI_API_KEY env var on the VPS — never in client code.
+- **Streaming**: relay → app is NDJSON, one JSON per line:
+  `{"t":"delta","text"}` (incremental), `{"t":"sources","items":[{title,url}]}`,
+  `{"t":"done"}`, `{"t":"error","message"}`. Errors are in-stream (HTTP is
+  always 200 once streaming starts). The client renders markdown progressively
+  per delta and shows sources as glass chips. Grounding is native-endpoint-only
+  (the OpenAI-compat endpoint rejects google_search — do not go back).
+- The CLIENT stays vendor-neutral (Anthropic-shaped content blocks in `messages`).
+  Changing brains = rewriting server.py's translation only.
+- Brain history: Claude Sonnet 5 (v1) → Gemini via OpenAI-compat (2026-07-09) →
+  native Gemini + grounding + streaming (2026-07-11). MODEL default
+  gemini-3.1-flash-lite (free-tier reliable; 3.5-flash richer but sheds free load).
 - Multi-turn: resend the full messages array; the image rides only in the first user message.
-- Config knobs: RELAY, MAX_TOKENS, ASK_PROMPT at the top of index.html's script;
-  MODEL + UPSTREAM at the top of server.py.
+- ASK_PROMPT (index.html) is English-learner-first: lead with the everyday
+  American name incl. genericized trademarks (Kleenex/Q-tips/Band-Aids),
+  collocations, compact-by-default. Don't flatten it back to generic captioning.
+- Config knobs: RELAY, MAX_TOKENS, ASK_PROMPT in index.html; MODEL/UPSTREAM/PORT/
+  HOST/TLS in server.py (all env- or flag-overridable; UPSTREAM override enables
+  fake-upstream pipeline tests — see scratchpad test_stream_pipeline.py pattern).
 
 ## Deploy
 VPS: `GEMINI_API_KEY=... python3 server.py` (systemd/pm2; python3 is preinstalled
