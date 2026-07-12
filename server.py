@@ -11,11 +11,15 @@
 #
 # Run (VPS):    GEMINI_API_KEY=...  python3 server.py
 # Run (local):  python3 server.py --key TEST --port 8790
+import base64
 import json
 import os
 import sys
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
+import uuid
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 UPSTREAM_BASE = os.environ.get("UPSTREAM", "https://generativelanguage.googleapis.com/v1beta")
@@ -60,6 +64,31 @@ def to_gemini(body):
     }
 
 
+# Search: do NOT try uploading frames to Google's endpoints. Browsers get 403
+# on lens.google.com/v3/upload AND /searchbyimage/upload; a server-side
+# anonymous upload mints a results link the user's logged-in browser refuses
+# ("image not associated with your account") - all verified 2026-07-13. The
+# route that works is lens.google.com/uploadbyurl: GOOGLE fetches the frame
+# from a public URL inside the user's own session. So the relay hosts each
+# frame briefly; set PUBLIC_URL (or --public) to this server's public base
+# once deployed - on a LAN address Google cannot reach the frame.
+PUBLIC = arg("--public") or os.environ.get("PUBLIC_URL")
+FRAMES = {}          # id -> (jpeg bytes, monotonic stamp)
+FRAME_TTL = 600      # seconds a frame stays fetchable
+FRAME_CAP = 30
+
+
+def frame_put(jpeg):
+    now = time.monotonic()
+    for k in [k for k, (_, t) in FRAMES.items() if now - t > FRAME_TTL]:
+        FRAMES.pop(k, None)
+    while len(FRAMES) >= FRAME_CAP:
+        FRAMES.pop(next(iter(FRAMES)), None)
+    fid = uuid.uuid4().hex[:12]
+    FRAMES[fid] = (jpeg, now)
+    return fid
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=BASE, **kw)
@@ -70,6 +99,18 @@ class Handler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_GET(self):
+        if self.path.startswith("/frame/"):  # short-lived frame hosting for uploadbyurl
+            item = FRAMES.get(self.path[len("/frame/"):].split(".")[0])
+            if not item:
+                self.send_json(404, {"error": {"message": "frame expired"}})
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(item[0])))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(item[0])
+            return
         if TLS and self.path == "/ca.crt":  # let the iPhone download the cert to trust
             with open(os.path.join(TLS, "cert.pem"), "rb") as f:
                 data = f.read()
@@ -90,6 +131,19 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_POST(self):
+        if self.path == "/api/lens":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length))
+                fid = frame_put(base64.b64decode(body["image"]))
+                base = (PUBLIC or "%s://%s" % ("https" if TLS else "http",
+                        self.headers.get("Host") or "%s:%s" % (HOST, PORT))).rstrip("/")
+                frame_url = "%s/frame/%s.jpg" % (base, fid)
+                self.send_json(200, {"url":
+                    "https://lens.google.com/uploadbyurl?url=" + urllib.parse.quote(frame_url, safe="")})
+            except Exception as e:
+                self.send_json(502, {"error": {"message": "lens: %s" % e}})
+            return
         if self.path != "/api/claude":
             self.send_json(404, {"error": {"message": "not found"}})
             return

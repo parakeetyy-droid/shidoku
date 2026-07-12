@@ -303,6 +303,7 @@
 // relay address must be absolute: the PC on your Wi-Fi for now, the VPS later.
 const NATIVE     = !/^https?:$/.test(location.protocol);
 const RELAY      = NATIVE ? "http://192.168.0.102:8790/api/claude" : "/api/claude";
+const LENS       = RELAY.replace(/\/claude$/, "/lens");
 const MAX_TOKENS = 4000;
 // The model itself is chosen in server.py on the VPS — this app is vendor-neutral.
 const ASK_PROMPT = `You are the engine behind a personal Visual Intelligence camera, built for an advanced English learner who wants to know what things are really called in American English.
@@ -341,7 +342,7 @@ const cam=$("cam"), vf=$("vf"), frozen=$("frozen"), statusPill=$("statusPill"),
       grab=document.querySelector(".grab");
 
 let stream=null, live=false, starting=false, fallback=false;
-let frozenB64=null, messages=[], loading=false, pendingAsk=false;
+let frozenB64=null, messages=[], loading=false, pendingAsk=false, pendingSearch=false;
 
 // ── camera: live on launch, stop when hidden, resume when visible ──
 async function startCamera(){
@@ -466,20 +467,51 @@ askBtn.onclick=()=>{
     camInput.click();
   }
 };
-searchBtn.onclick=()=> showToast("Search isn't wired up yet.");
+// ── Search v1: hand the frozen frame to Google visual search ──
+// Browsers get 403 on Google's upload endpoints, so the RELAY uploads the
+// frame (POST /api/lens) and returns the results URL from Google's redirect.
+// The tab must be opened synchronously inside the tap or popup rules eat it.
+async function openLens(b64){
+  const win=window.open("about:blank","_blank");
+  try{
+    const r=await fetch(LENS,{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({image:b64})});
+    const j=await r.json();
+    if(!j.url) throw new Error((j.error&&j.error.message)||"no result URL");
+    if(win) win.location=j.url;
+    else showToast("Allow pop-ups to open Search results.");
+  }catch(e){
+    if(win) win.close();
+    showToast("Search failed: "+(e.message||e));
+  }
+}
+searchBtn.onclick=()=>{
+  if(starting) return;
+  if(frozenB64){ openLens(frozenB64); return; }
+  if(live){
+    if(!vf.videoWidth) return;
+    const img=frameToJpeg(vf, vf.videoWidth, vf.videoHeight);
+    freeze(img); openLens(img.b64);
+  }else{
+    pendingSearch=true;
+    camInput.click(); // system camera, then hand the shot to Lens
+  }
+};
 
 camInput.onchange=(e)=>{
   const f=e.target.files && e.target.files[0]; e.target.value="";
-  if(!f){ pendingAsk=false; return; }
+  if(!f){ pendingAsk=pendingSearch=false; return; }
   const url=URL.createObjectURL(f); const im=new Image();
   im.onload=()=>{
     const img=frameToJpeg(im, im.naturalWidth, im.naturalHeight);
     URL.revokeObjectURL(url);
     freeze(img);
     if(pendingAsk){ pendingAsk=false; openSheet(); firstAsk(); }
+    if(pendingSearch){ pendingSearch=false; openLens(img.b64); }
   };
   im.onerror=()=>{
-    URL.revokeObjectURL(url); pendingAsk=false;
+    URL.revokeObjectURL(url); pendingAsk=pendingSearch=false;
     showToast("Couldn't decode that image.");
   };
   im.src=url;
@@ -683,6 +715,11 @@ if(SIM){
     if(frozenB64){ openSheet(); if(!messages.length && !loading) firstAsk(); return; }
     if(!simFrame) return;
     freeze(simFrame); openSheet(); firstAsk();
+  };
+  searchBtn.onclick=()=>{
+    if(frozenB64){ openLens(frozenB64); return; }
+    if(!simFrame) return;
+    freeze(simFrame); openLens(simFrame.b64);
   };
 }
 

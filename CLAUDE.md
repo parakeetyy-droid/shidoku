@@ -1,8 +1,9 @@
 # Shidoku — personal Visual Intelligence app (owner: Pakē)
 
-Camera-first iPhone app; ONE feature: the **Ask** button (Apple Visual
-Intelligence parity: Ask / shutter / Search bottom bar). **Search is a
-deliberate stub.** Do not add features unprompted.
+Camera-first iPhone app (Apple Visual Intelligence parity: Ask / shutter /
+Search bottom bar). **Ask** = Gemini answer in the sheet. **Search** (v1,
+owner request 2026-07-13) = hand the frame to Google Lens. Do not add
+features unprompted.
 
 DELIVERY (owner's decision 2026-07-09): **native iOS shell via Capacitor**,
 built unsigned on GitHub macOS runners, sideloaded with AltStore (free Apple ID,
@@ -45,6 +46,17 @@ working web app and the single source of truth — the shell wraps it verbatim.
   at open, before any NDJSON reached the app). Ungrounded answers just show no
   source chips; a paid key upgrades back to grounded automatically. Do not
   remove this fallback — without it every Ask dies on free tier.
+- **Search v1**: app POSTs the frozen frame to /api/lens → relay stores it in
+  memory (10-min TTL, 30 cap) → returns `lens.google.com/uploadbyurl?url=`
+  pointing at the relay's /frame/<id>.jpg → app window.opens it (the tab is
+  opened synchronously inside the tap or popup rules eat it). Google fetches
+  the frame inside the USER's own session. Set PUBLIC_URL env (or --public)
+  to the server's public base on deploy; Google cannot fetch LAN addresses,
+  so Search completes only once the app lives on the VPS. DO NOT upload to
+  Google's endpoints instead — browsers get 403 on lens.google.com/v3/upload
+  and /searchbyimage/upload, and a server-side anonymous upload mints a link
+  the logged-in browser refuses ("image not associated with your account");
+  all three verified 2026-07-13.
 - The CLIENT stays vendor-neutral (Anthropic-shaped content blocks in `messages`).
   Changing brains = rewriting server.py's translation only.
 - Brain history: Claude Sonnet 5 (v1) → Gemini via OpenAI-compat (2026-07-09) →
