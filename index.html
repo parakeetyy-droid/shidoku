@@ -139,13 +139,6 @@
   #sheetHead{display:flex;align-items:center;justify-content:space-between;padding:7px 16px 6px}
   .grab,#sheetHead{touch-action:none;-webkit-user-select:none;user-select:none}
   #sheetTitle{font-size:11px;letter-spacing:.18em;color:var(--dim)}
-  #sheetClose{
-    position:relative;width:30px;height:30px;border-radius:999px;background:var(--lg-fill);
-    -webkit-backdrop-filter:var(--lg-blur);backdrop-filter:var(--lg-blur);box-shadow:var(--lg-shadow);
-    display:flex;align-items:center;justify-content:center;
-    transition:transform .18s ease;
-  }
-  #sheetClose:active{transform:scale(.88)}
   #thread{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:2px 18px;overscroll-behavior:contain;scroll-behavior:smooth}
   .userMsg{display:flex;justify-content:flex-end;margin:10px 0}
   .userMsg>div{background:#2B2F36;border-radius:14px;padding:8px 13px;font-size:15px;max-width:85%;line-height:1.5}
@@ -200,8 +193,8 @@
   }
   #send{
     position:relative;width:44px;height:44px;border-radius:999px;flex-shrink:0;
-    background:linear-gradient(155deg, #F0CC6A, var(--accent) 55%, #C99B33);
-    box-shadow:0 4px 14px rgba(227,185,79,.4), inset 0 1px 0 rgba(255,255,255,.6), inset 0 -6px 12px rgba(120,86,10,.25);
+    background:linear-gradient(180deg, #1173C8, #0661B4 62%, #05539B);
+    box-shadow:0 4px 14px rgba(6,97,180,.38), inset 0 1px 0 rgba(255,255,255,.26), inset 0 -6px 12px rgba(0,22,44,.22);
     display:flex;align-items:center;justify-content:center;
     transition:transform .18s ease, opacity .2s ease;
   }
@@ -218,21 +211,8 @@
   }
   #toast.show{opacity:1}
 
-  /* ── Liquid Glass edge: specular rim (::before) + gloss highlight (::after) ── */
-  .circ::before, #statusPill::before, #retake::before, #sheetClose::before, #toast::before, #sheet::before{
-    content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;
-    background:linear-gradient(150deg, rgba(255,255,255,.7), rgba(255,255,255,.1) 28%, rgba(255,255,255,0) 54%, rgba(255,255,255,.05) 78%, rgba(255,255,255,.38));
-    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-            mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite:xor;mask-composite:exclude;
-  }
-  .circ::after, #statusPill::after, #retake::after, #sheetClose::after, #toast::after{
-    content:"";position:absolute;left:15%;right:15%;top:6%;height:36%;border-radius:inherit;pointer-events:none;
-    background:linear-gradient(rgba(255,255,255,.22), rgba(255,255,255,0));filter:blur(3px);opacity:.55;
-  }
-
   /* ── Liquid Glass edge: specular rim + gloss highlight ── */
-  .circ::before, #statusPill::before, #retake::before, #sheetClose::before,
+  .circ::before, #statusPill::before, #retake::before,
   #toast::before, #sheet::before{
     content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;padding:1.2px;
     background:linear-gradient(155deg, rgba(255,255,255,.95), rgba(255,255,255,.16) 24%,
@@ -240,7 +220,7 @@
     -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite:xor;mask-composite:exclude;
   }
-  .circ::after, #statusPill::after, #retake::after, #sheetClose::after, #toast::after{
+  .circ::after, #statusPill::after, #retake::after, #toast::after{
     content:"";position:absolute;left:12%;right:12%;top:7%;height:42%;border-radius:inherit;
     pointer-events:none;background:linear-gradient(rgba(255,255,255,.32), rgba(255,255,255,0));
     filter:blur(2px);opacity:.75;
@@ -290,9 +270,6 @@
   <div class="grab"></div>
   <div id="sheetHead">
     <span id="sheetTitle">ASK</span>
-    <button id="sheetClose" aria-label="Close">
-      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-    </button>
   </div>
   <div id="thread"></div>
   <div id="loadRow"><span class="pulse"></span><span>Thinking&#8230;</span></div>
@@ -300,7 +277,7 @@
   <div id="inRow">
     <input id="inp" placeholder="Ask a follow-up&#8230;" enterkeyhint="send">
     <button id="send" aria-label="Send">
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#1A1608" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6.5 11.5L12 6l5.5 5.5"/></svg>
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6.5 11.5L12 6l5.5 5.5"/></svg>
     </button>
   </div>
 </div>
@@ -353,7 +330,7 @@ const $ = id => document.getElementById(id);
 const cam=$("cam"), vf=$("vf"), frozen=$("frozen"), statusPill=$("statusPill"),
       retake=$("retake"), idleHint=$("idleHint"),
       askBtn=$("askBtn"), shutter=$("shutter"), searchBtn=$("searchBtn"),
-      sheet=$("sheet"), sheetClose=$("sheetClose"), thread=$("thread"),
+      sheet=$("sheet"), thread=$("thread"),
       loadRow=$("loadRow"), errRow=$("errRow"), inp=$("inp"), send=$("send"),
       toast=$("toast"), camInput=$("camInput"), cv=$("cv"),
       glow=$("glow"), liqNoise=$("liqNoise"), liqDisp=$("liqDisp"), sheetHead=$("sheetHead"),
@@ -507,7 +484,6 @@ camInput.onchange=(e)=>{
 // ── Ask sheet ──
 function openSheet(){ sheet.classList.add("open"); frozen.classList.add("dim"); scrollEnd(); }
 function closeSheet(){ sheet.classList.remove("open"); frozen.classList.remove("dim"); }
-sheetClose.onclick=closeSheet;
 
 // launch glow: one pulse, then the class leaves so .thinking can reuse the element
 glow.classList.add("hello");
