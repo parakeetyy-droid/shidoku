@@ -109,11 +109,11 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write((json.dumps(obj) + "\n").encode("utf-8"))
             self.wfile.flush()
 
-        try:
+        def stream_upstream(payload):
             url = "%s/models/%s:streamGenerateContent?alt=sse" % (UPSTREAM_BASE, MODEL)
             req = urllib.request.Request(
                 url,
-                data=json.dumps(to_gemini(body)).encode("utf-8"),
+                data=json.dumps(payload).encode("utf-8"),
                 headers={"Content-Type": "application/json", "x-goog-api-key": KEY},
             )
             sources, seen = [], set()
@@ -122,10 +122,10 @@ class Handler(SimpleHTTPRequestHandler):
                     line = raw.decode("utf-8", "replace").strip()
                     if not line.startswith("data:"):
                         continue
-                    payload = line[5:].strip()
-                    if not payload or payload == "[DONE]":
+                    data = line[5:].strip()
+                    if not data or data == "[DONE]":
                         continue
-                    chunk = json.loads(payload)
+                    chunk = json.loads(data)
                     for cand in chunk.get("candidates", []):
                         for part in cand.get("content", {}).get("parts", []):
                             if part.get("thought"):
@@ -142,6 +142,23 @@ class Handler(SimpleHTTPRequestHandler):
             if sources:
                 emit({"t": "sources", "items": sources[:6]})
             emit({"t": "done"})
+
+        try:
+            payload = to_gemini(body)
+            try:
+                stream_upstream(payload)
+            except urllib.error.HTTPError as e:
+                # Free-tier keys get 429 RESOURCE_EXHAUSTED on any google_search
+                # request even when plain requests are fine (verified 2026-07-13).
+                # The 429 arrives at open, before anything streamed to the app,
+                # so retrying without the tool is safe. Ungrounded answers simply
+                # carry no source chips; if Google grants grounding quota later,
+                # answers upgrade automatically.
+                if e.code == 429 and payload.pop("tools", None):
+                    print("grounding quota exhausted -> answering ungrounded", flush=True)
+                    stream_upstream(payload)
+                else:
+                    raise
         except urllib.error.HTTPError as e:
             raw = e.read().decode("utf-8", "replace")
             try:

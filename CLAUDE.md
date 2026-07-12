@@ -37,6 +37,14 @@ working web app and the single source of truth — the shell wraps it verbatim.
   always 200 once streaming starts). The client renders markdown progressively
   per delta and shows sources as glass chips. Grounding is native-endpoint-only
   (the OpenAI-compat endpoint rejects google_search — do not go back).
+- **Free-tier grounding wall (verified 2026-07-13)**: with the owner's free key,
+  ANY request carrying google_search 429s (RESOURCE_EXHAUSTED, no per-metric
+  detail) while the same request without tools succeeds — on flash-lite AND
+  flash-latest, with fresh daily quota. It was never the daily request quota.
+  server.py therefore retries once WITHOUT tools on a 429 (safe: the 429 raises
+  at open, before any NDJSON reached the app). Ungrounded answers just show no
+  source chips; a paid key upgrades back to grounded automatically. Do not
+  remove this fallback — without it every Ask dies on free tier.
 - The CLIENT stays vendor-neutral (Anthropic-shaped content blocks in `messages`).
   Changing brains = rewriting server.py's translation only.
 - Brain history: Claude Sonnet 5 (v1) → Gemini via OpenAI-compat (2026-07-09) →
