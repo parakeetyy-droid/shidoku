@@ -43,8 +43,11 @@
   @keyframes frzIn{from{opacity:.25;transform:scale(1.045)}to{opacity:1;transform:scale(1)}}
   #wave{
     position:absolute;left:50%;bottom:96px;width:220vmax;height:220vmax;
-    margin-left:-110vmax;margin-bottom:-110vmax;border-radius:999px;
-    pointer-events:none;z-index:3;transform:scale(0);opacity:0;
+    margin-left:-110vmax;margin-bottom:-110vmax;
+    pointer-events:none;z-index:3;
+  }
+  .wv{
+    position:absolute;inset:0;border-radius:999px;transform:scale(0);opacity:0;
     background:radial-gradient(closest-side,
       rgba(255,255,255,0) 42%,
       rgba(255,179,208,.38) 52%,
@@ -52,16 +55,32 @@
       rgba(166,204,255,.36) 70%,
       rgba(255,255,255,.55) 78%,
       rgba(255,255,255,0) 86%);
-    -webkit-backdrop-filter:blur(10px) saturate(190%);backdrop-filter:blur(10px) saturate(190%);
     -webkit-mask:radial-gradient(closest-side, transparent 40%, #000 52%, #000 84%, transparent 90%);
             mask:radial-gradient(closest-side, transparent 40%, #000 52%, #000 84%, transparent 90%);
   }
-  #wave.go{animation:waveOut 1.15s cubic-bezier(.22,.61,.36,1) 1}
+  .wv:first-child{-webkit-backdrop-filter:blur(10px) saturate(190%);backdrop-filter:blur(10px) saturate(190%)}
+  .wv:nth-child(2){
+    background:radial-gradient(closest-side,
+      rgba(255,255,255,0) 48%,
+      rgba(166,204,255,.30) 58%,
+      rgba(255,179,208,.34) 68%,
+      rgba(255,255,255,.38) 76%,
+      rgba(255,255,255,0) 84%);
+  }
+  .wv:nth-child(3){
+    background:radial-gradient(closest-side,
+      rgba(255,255,255,0) 50%,
+      rgba(203,166,255,.26) 62%,
+      rgba(255,214,166,.24) 72%,
+      rgba(255,255,255,.30) 80%,
+      rgba(255,255,255,0) 88%);
+  }
+  #wave.go .wv{animation:waveOut 1.15s cubic-bezier(.22,.61,.36,1) both}
   @keyframes waveOut{
-    0%{transform:scale(0);opacity:0}
+    0%{transform:scale(0) rotate(var(--r0,0deg));opacity:0}
     10%{opacity:1}
-    70%{opacity:.9}
-    100%{transform:scale(1);opacity:0}
+    70%{opacity:.85}
+    100%{transform:scale(1) rotate(var(--r1,40deg));opacity:0}
   }
   #statusPill{
     position:absolute;top:calc(14px + var(--sat));left:50%;transform:translateX(-50%);
@@ -202,7 +221,7 @@
   .pulse{width:8px;height:8px;border-radius:999px;background:var(--accent);animation:pw 1.1s ease-in-out infinite}
   @keyframes pw{0%,100%{opacity:.25}50%{opacity:1}}
   @media (prefers-reduced-motion: reduce){
-    .pulse,#glow,#shutter .ring,.userMsg,.ans,.tools,.srcRow,#frozen,#wave{animation:none}
+    .pulse,#glow,#shutter .ring,.userMsg,.ans,.tools,.srcRow,#frozen,.wv{animation:none}
     #sheet,#sheet.open{transition:none}
     .pulse{opacity:.9}
   }
@@ -276,7 +295,7 @@
   </button>
   <div id="idleHint">Requesting camera access &#8212; tap Allow once.<br>Every launch after that opens straight to the live viewfinder.</div>
   <div id="glow"></div>
-  <div id="wave"></div>
+  <div id="wave"><span class="wv"></span><span class="wv"></span><span class="wv"></span></div>
 
   <div id="bar">
     <button class="side" id="askBtn" aria-label="Ask">
@@ -420,6 +439,28 @@ document.addEventListener("visibilitychange", ()=>{
 startCamera();
 
 // ── capture ──
+// each capture rolls a new liquid wave: random blob outlines, rotations,
+// origin drift and stagger per layer, so no two splashes look alike
+function waveSplash(){
+  const r=(a,b)=>a+Math.random()*(b-a);
+  const blob=()=>{
+    const a=Math.round(r(36,64)), b=Math.round(r(36,64)),
+          c=Math.round(r(36,64)), d=Math.round(r(36,64));
+    return a+"% "+(100-a)+"% "+b+"% "+(100-b)+"% / "+c+"% "+d+"% "+(100-d)+"% "+(100-c)+"%";
+  };
+  wave.classList.remove("go");
+  void wave.offsetWidth;
+  [...wave.children].forEach((el,i)=>{
+    el.style.borderRadius=blob();
+    el.style.setProperty("--r0", r(-45,45).toFixed(0)+"deg");
+    el.style.setProperty("--r1", r(-80,80).toFixed(0)+"deg");
+    el.style.transformOrigin=r(42,58).toFixed(1)+"% "+r(42,58).toFixed(1)+"%";
+    el.style.animationDelay=(i*90)+"ms";
+    el.style.animationDuration=(1.0+i*0.16+r(0,0.12)).toFixed(2)+"s";
+  });
+  wave.classList.add("go");
+}
+
 function frameToJpeg(source,w,h){
   const MAX=1400, s=Math.min(1, MAX/Math.max(w,h));
   cv.width=Math.round(w*s); cv.height=Math.round(h*s);
@@ -431,7 +472,7 @@ function freeze(img){
   frozenB64=img.b64;
   frozen.src=img.dataUrl; frozen.style.display="block";
   frozen.classList.remove("frzAnim"); void frozen.offsetWidth; frozen.classList.add("frzAnim");
-  wave.classList.remove("go"); void wave.offsetWidth; wave.classList.add("go");
+  waveSplash();
   glow.classList.remove("snap"); void glow.offsetWidth; glow.classList.add("snap");
   stopCamera();
   cam.classList.add("isFrozen");
