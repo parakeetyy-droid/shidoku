@@ -41,47 +41,8 @@
   #frozen.dim{filter:brightness(.45)}
   #frozen.frzAnim{animation:frzIn .38s cubic-bezier(.2,.7,.2,1)}
   @keyframes frzIn{from{opacity:.25;transform:scale(1.045)}to{opacity:1;transform:scale(1)}}
-  #wave{
-    position:absolute;left:50%;bottom:96px;width:220vmax;height:220vmax;
-    margin-left:-110vmax;margin-bottom:-110vmax;
-    pointer-events:none;z-index:3;
-  }
-  .wv{
-    position:absolute;inset:0;border-radius:999px;transform:scale(0);opacity:0;
-    background:radial-gradient(closest-side,
-      rgba(255,255,255,0) 42%,
-      rgba(255,179,208,.38) 52%,
-      rgba(203,166,255,.46) 62%,
-      rgba(166,204,255,.36) 70%,
-      rgba(255,255,255,.55) 78%,
-      rgba(255,255,255,0) 86%);
-    -webkit-mask:radial-gradient(closest-side, transparent 40%, #000 52%, #000 84%, transparent 90%);
-            mask:radial-gradient(closest-side, transparent 40%, #000 52%, #000 84%, transparent 90%);
-  }
-  .wv:first-child{-webkit-backdrop-filter:blur(10px) saturate(190%);backdrop-filter:blur(10px) saturate(190%)}
-  .wv:nth-child(2){
-    background:radial-gradient(closest-side,
-      rgba(255,255,255,0) 48%,
-      rgba(166,204,255,.30) 58%,
-      rgba(255,179,208,.34) 68%,
-      rgba(255,255,255,.38) 76%,
-      rgba(255,255,255,0) 84%);
-  }
-  .wv:nth-child(3){
-    background:radial-gradient(closest-side,
-      rgba(255,255,255,0) 50%,
-      rgba(203,166,255,.26) 62%,
-      rgba(255,214,166,.24) 72%,
-      rgba(255,255,255,.30) 80%,
-      rgba(255,255,255,0) 88%);
-  }
-  #wave.go .wv{animation:waveOut 1.15s cubic-bezier(.22,.61,.36,1) both}
-  @keyframes waveOut{
-    0%{transform:scale(0) rotate(var(--r0,0deg));opacity:0}
-    10%{opacity:1}
-    70%{opacity:.85}
-    100%{transform:scale(1) rotate(var(--r1,40deg));opacity:0}
-  }
+  /* capture "liquefy": the frozen photo itself is warped by SVG turbulence
+     (filter defined before </body>) and settles into place via JS */
   #statusPill{
     position:absolute;top:calc(14px + var(--sat));left:50%;transform:translateX(-50%);
     z-index:5;font-size:12px;color:#EDEFF2;background:var(--lg-fill);padding:6px 14px;
@@ -221,7 +182,7 @@
   .pulse{width:8px;height:8px;border-radius:999px;background:var(--accent);animation:pw 1.1s ease-in-out infinite}
   @keyframes pw{0%,100%{opacity:.25}50%{opacity:1}}
   @media (prefers-reduced-motion: reduce){
-    .pulse,#glow,#shutter .ring,.userMsg,.ans,.tools,.srcRow,#frozen,.wv{animation:none}
+    .pulse,#glow,#shutter .ring,.userMsg,.ans,.tools,.srcRow,#frozen{animation:none}
     #sheet,#sheet.open{transition:none}
     .pulse{opacity:.9}
   }
@@ -295,7 +256,6 @@
   </button>
   <div id="idleHint">Requesting camera access &#8212; tap Allow once.<br>Every launch after that opens straight to the live viewfinder.</div>
   <div id="glow"></div>
-  <div id="wave"><span class="wv"></span><span class="wv"></span><span class="wv"></span></div>
 
   <div id="bar">
     <button class="side" id="askBtn" aria-label="Ask">
@@ -347,6 +307,12 @@
 
 <input type="file" id="camInput" accept="image/*" capture="environment" hidden>
 <canvas id="cv" hidden></canvas>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="liquefy" x="-20%" y="-20%" width="140%" height="140%">
+    <feTurbulence id="liqNoise" type="fractalNoise" baseFrequency="0.012 0.02" numOctaves="2" seed="7" result="n"/>
+    <feDisplacementMap id="liqDisp" in="SourceGraphic" in2="n" scale="0" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
 
 <script>
 // ═══════════════ config — edit freely ═══════════════
@@ -388,7 +354,7 @@ const cam=$("cam"), vf=$("vf"), frozen=$("frozen"), statusPill=$("statusPill"),
       sheet=$("sheet"), sheetClose=$("sheetClose"), thread=$("thread"),
       loadRow=$("loadRow"), errRow=$("errRow"), inp=$("inp"), send=$("send"),
       toast=$("toast"), camInput=$("camInput"), cv=$("cv"),
-      glow=$("glow"), wave=$("wave"), sheetHead=$("sheetHead"),
+      glow=$("glow"), liqNoise=$("liqNoise"), liqDisp=$("liqDisp"), sheetHead=$("sheetHead"),
       grab=document.querySelector(".grab");
 
 let stream=null, live=false, starting=false, fallback=false;
@@ -439,26 +405,25 @@ document.addEventListener("visibilitychange", ()=>{
 startCamera();
 
 // ── capture ──
-// each capture rolls a new liquid wave: random blob outlines, rotations,
-// origin drift and stagger per layer, so no two splashes look alike
-function waveSplash(){
-  const r=(a,b)=>a+Math.random()*(b-a);
-  const blob=()=>{
-    const a=Math.round(r(36,64)), b=Math.round(r(36,64)),
-          c=Math.round(r(36,64)), d=Math.round(r(36,64));
-    return a+"% "+(100-a)+"% "+b+"% "+(100-b)+"% / "+c+"% "+d+"% "+(100-d)+"% "+(100-c)+"%";
-  };
-  wave.classList.remove("go");
-  void wave.offsetWidth;
-  [...wave.children].forEach((el,i)=>{
-    el.style.borderRadius=blob();
-    el.style.setProperty("--r0", r(-45,45).toFixed(0)+"deg");
-    el.style.setProperty("--r1", r(-80,80).toFixed(0)+"deg");
-    el.style.transformOrigin=r(42,58).toFixed(1)+"% "+r(42,58).toFixed(1)+"%";
-    el.style.animationDelay=(i*90)+"ms";
-    el.style.animationDuration=(1.0+i*0.16+r(0,0.12)).toFixed(2)+"s";
-  });
-  wave.classList.add("go");
+// capture "liquefy": the frozen photo itself starts molten and settles into
+// place - SVG turbulence displacement eased from strong to zero. A random
+// noise seed per capture means the liquid flows differently every time.
+let liqRun=0;
+function liquefy(){
+  if(matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const run=++liqRun;
+  liqNoise.setAttribute("seed", String(1+Math.floor(Math.random()*999)));
+  frozen.style.filter="url(#liquefy)";
+  const t0=performance.now(), DUR=850, S0=60;
+  (function step(){
+    if(run!==liqRun) return;                    // superseded by a newer capture
+    const p=Math.min(1,(performance.now()-t0)/DUR);
+    const e=1-Math.pow(1-p,3);                  // ease-out: fast melt, gentle settle
+    liqDisp.scale.baseVal=S0*(1-e);
+    if(p<1) requestAnimationFrame(step);
+    else frozen.style.filter="";                // back to the crisp GPU path
+  })();
+  setTimeout(()=>{ if(run===liqRun) frozen.style.filter=""; }, DUR+400); // failsafe if frames stall (backgrounded)
 }
 
 function frameToJpeg(source,w,h){
@@ -472,7 +437,7 @@ function freeze(img){
   frozenB64=img.b64;
   frozen.src=img.dataUrl; frozen.style.display="block";
   frozen.classList.remove("frzAnim"); void frozen.offsetWidth; frozen.classList.add("frzAnim");
-  waveSplash();
+  liquefy();
   glow.classList.remove("snap"); void glow.offsetWidth; glow.classList.add("snap");
   stopCamera();
   cam.classList.add("isFrozen");
