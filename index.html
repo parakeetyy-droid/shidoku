@@ -41,9 +41,27 @@
   #frozen.dim{filter:brightness(.45)}
   #frozen.frzAnim{animation:frzIn .38s cubic-bezier(.2,.7,.2,1)}
   @keyframes frzIn{from{opacity:.25;transform:scale(1.045)}to{opacity:1;transform:scale(1)}}
-  #blink{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;z-index:5}
-  #blink.go{animation:blinkA .22s ease-out}
-  @keyframes blinkA{from{opacity:.65}to{opacity:0}}
+  #wave{
+    position:absolute;left:50%;bottom:96px;width:220vmax;height:220vmax;
+    margin-left:-110vmax;margin-bottom:-110vmax;border-radius:999px;
+    pointer-events:none;z-index:3;transform:scale(0);opacity:0;
+    background:radial-gradient(closest-side,
+      rgba(255,255,255,0) 54%,
+      rgba(255,179,208,.20) 62%,
+      rgba(203,166,255,.24) 69%,
+      rgba(166,204,255,.18) 74%,
+      rgba(255,255,255,.30) 78%,
+      rgba(255,255,255,0) 84%);
+    -webkit-backdrop-filter:blur(5px) saturate(150%);backdrop-filter:blur(5px) saturate(150%);
+    -webkit-mask:radial-gradient(closest-side, transparent 52%, #000 63%, #000 82%, transparent 88%);
+            mask:radial-gradient(closest-side, transparent 52%, #000 63%, #000 82%, transparent 88%);
+  }
+  #wave.go{animation:waveOut .8s cubic-bezier(.22,.61,.36,1) 1}
+  @keyframes waveOut{
+    0%{transform:scale(0);opacity:0}
+    12%{opacity:1}
+    100%{transform:scale(1);opacity:0}
+  }
   #statusPill{
     position:absolute;top:calc(14px + var(--sat));left:50%;transform:translateX(-50%);
     z-index:5;font-size:12px;color:#EDEFF2;background:var(--lg-fill);padding:6px 14px;
@@ -115,6 +133,7 @@
     box-shadow:inset 0 0 46px 10px rgba(236,102,171,.5), inset 0 0 110px 34px rgba(122,92,238,.28);
   }
   #glow.hello{animation:glowPulse 2.4s ease-out .15s 1}
+  #glow.snap{animation:glowPulse .9s ease-out 1}
   #glow.thinking{animation:glowBreathe 2.2s ease-in-out .2s infinite}
   @keyframes glowPulse{0%{opacity:0}22%{opacity:1}60%{opacity:.7}100%{opacity:0}}
   @keyframes glowBreathe{0%,100%{opacity:.1}50%{opacity:.75}}
@@ -179,7 +198,7 @@
   .pulse{width:8px;height:8px;border-radius:999px;background:var(--accent);animation:pw 1.1s ease-in-out infinite}
   @keyframes pw{0%,100%{opacity:.25}50%{opacity:1}}
   @media (prefers-reduced-motion: reduce){
-    .pulse,#glow,#shutter .ring,.userMsg,.ans,.tools,.srcRow,#frozen,#blink{animation:none}
+    .pulse,#glow,#shutter .ring,.userMsg,.ans,.tools,.srcRow,#frozen,#wave{animation:none}
     #sheet,#sheet.open{transition:none}
     .pulse{opacity:.9}
   }
@@ -253,7 +272,7 @@
   </button>
   <div id="idleHint">Requesting camera access &#8212; tap Allow once.<br>Every launch after that opens straight to the live viewfinder.</div>
   <div id="glow"></div>
-  <div id="blink"></div>
+  <div id="wave"></div>
 
   <div id="bar">
     <button class="side" id="askBtn" aria-label="Ask">
@@ -346,7 +365,7 @@ const cam=$("cam"), vf=$("vf"), frozen=$("frozen"), statusPill=$("statusPill"),
       sheet=$("sheet"), sheetClose=$("sheetClose"), thread=$("thread"),
       loadRow=$("loadRow"), errRow=$("errRow"), inp=$("inp"), send=$("send"),
       toast=$("toast"), camInput=$("camInput"), cv=$("cv"),
-      glow=$("glow"), blink=$("blink"), sheetHead=$("sheetHead"),
+      glow=$("glow"), wave=$("wave"), sheetHead=$("sheetHead"),
       grab=document.querySelector(".grab");
 
 let stream=null, live=false, starting=false, fallback=false;
@@ -408,7 +427,8 @@ function freeze(img){
   frozenB64=img.b64;
   frozen.src=img.dataUrl; frozen.style.display="block";
   frozen.classList.remove("frzAnim"); void frozen.offsetWidth; frozen.classList.add("frzAnim");
-  blink.classList.remove("go"); void blink.offsetWidth; blink.classList.add("go");
+  wave.classList.remove("go"); void wave.offsetWidth; wave.classList.add("go");
+  glow.classList.remove("snap"); void glow.offsetWidth; glow.classList.add("snap");
   stopCamera();
   cam.classList.add("isFrozen");
   retake.style.display="flex";
@@ -476,7 +496,7 @@ sheetClose.onclick=closeSheet;
 
 // launch glow: one pulse, then the class leaves so .thinking can reuse the element
 glow.classList.add("hello");
-glow.addEventListener("animationend",e=>{ if(e.animationName==="glowPulse") glow.classList.remove("hello"); });
+glow.addEventListener("animationend",e=>{ if(e.animationName==="glowPulse") glow.classList.remove("hello","snap"); });
 setTimeout(()=>glow.classList.remove("hello"), 3200); // fallback if animation events never fire
 
 // ── sheet drag-to-dismiss ──
