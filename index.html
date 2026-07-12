@@ -152,7 +152,7 @@
     font-size:12.5px;letter-spacing:.09em;color:var(--accent);margin:13px 0 5px;font-weight:600;
   }
   .ans .bl{display:flex;gap:9px;margin:4px 0}
-  .ans .bl span:first-child{color:var(--accent);flex-shrink:0}
+  .ans .bl span:first-child{color:rgba(255,255,255,.45);flex-shrink:0}
   .ans strong{font-weight:600;color:var(--ink)}
   .tools{display:flex;justify-content:flex-end;gap:8px;margin:4px 0 10px}
   .toolBtn{
@@ -174,7 +174,7 @@
   }
   #loadRow{display:none;align-items:center;gap:10px;padding:6px 18px 10px;color:var(--dim);font-size:13px}
   #loadRow.show{display:flex}
-  .pulse{width:8px;height:8px;border-radius:999px;background:var(--accent);animation:pw 1.1s ease-in-out infinite}
+  .pulse{width:8px;height:8px;border-radius:999px;background:rgba(255,255,255,.55);animation:pw 1.1s ease-in-out infinite}
   @keyframes pw{0%,100%{opacity:.25}50%{opacity:1}}
   @media (prefers-reduced-motion: reduce){
     .pulse,#glow,#shutter .ring,.userMsg,.ans,.tools,.srcRow,#frozen{animation:none}
@@ -193,8 +193,7 @@
   }
   #send{
     position:relative;width:44px;height:44px;border-radius:999px;flex-shrink:0;
-    background:linear-gradient(180deg, #1173C8, #0661B4 62%, #05539B);
-    box-shadow:0 4px 14px rgba(6,97,180,.38), inset 0 1px 0 rgba(255,255,255,.26), inset 0 -6px 12px rgba(0,22,44,.22);
+    background:linear-gradient(180deg, #0A67B8, #0661B4);
     display:flex;align-items:center;justify-content:center;
     transition:transform .18s ease, opacity .2s ease;
   }
