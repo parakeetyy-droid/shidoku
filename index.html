@@ -94,11 +94,13 @@
     transition:transform .3s cubic-bezier(.34,1.56,.64,1);
   }
   #shutter .ring{
+    /* liquid glass by default; ONE soft hue at a time, drifting slowly (owner:
+       "not colorful all the time... like RGB, one color, slowly changing") */
     position:absolute;inset:0;border-radius:999px;
-    background:conic-gradient(from 180deg, #FFB3D0, #CBA6FF, #A6CCFF, #FFDFA6, #FFB3D0);
-    opacity:.62;filter:blur(.4px);
-    box-shadow:inset 0 2px 3px rgba(255,255,255,.55), inset 0 -3px 8px rgba(0,0,0,.14), 0 0 22px rgba(198,140,255,.3);
-    animation:rspin 8s linear infinite;
+    background:hsla(226,85%,78%,.34);
+    box-shadow:inset 0 2px 3px rgba(255,255,255,.55), inset 0 -3px 8px rgba(0,0,0,.14), 0 0 22px hsla(226,85%,70%,.26);
+    filter:blur(.4px) hue-rotate(0deg);
+    animation:hueDrift 26s linear infinite;
   }
   #shutter .core{
     position:absolute;inset:7px;border-radius:999px;
@@ -107,7 +109,7 @@
   }
   #shutter:active{transform:scale(.95)}
   #shutter:active .core{background:radial-gradient(125% 125% at 32% 26%, rgba(240,240,236,.98), rgba(222,224,228,.82))}
-  @keyframes rspin{to{transform:rotate(360deg)}}
+  @keyframes hueDrift{to{filter:blur(.4px) hue-rotate(360deg)}}
   #cam.isFrozen #shutter{visibility:hidden}
   #glow{
     position:absolute;inset:0;z-index:6;pointer-events:none;opacity:0;
