@@ -77,9 +77,26 @@ def spawn_claude():
                             bufsize=1, env=env)
 
 
-POOL = []                 # pre-booted AND primed spares (target: 1)
+POOL = []                 # pre-booted AND primed spares
+POOL_TARGET = 2           # 2 = a quick capture->retake->capture burst stays warm
 THREADS = {}              # image-hash -> {proc, lock, ts}
 _LOCK = threading.Lock()
+LOG = os.path.join(BASE, "tmp", "relay.log")
+
+
+def tlog(line):
+    """Flight recorder: one line per Ask so 'it felt slow' is diagnosable."""
+    try:
+        os.makedirs(os.path.dirname(LOG), exist_ok=True)
+        if os.path.exists(LOG) and os.path.getsize(LOG) > 200_000:
+            with open(LOG, encoding="utf-8", errors="replace") as f:
+                tail = f.readlines()[-100:]
+            with open(LOG, "w", encoding="utf-8") as f:
+                f.writelines(tail)
+        with open(LOG, "a", encoding="utf-8") as f:
+            f.write(time.strftime("%m-%d %H:%M:%S ") + line + "\n")
+    except Exception:
+        pass
 
 
 def _top_up_pool():
@@ -98,7 +115,7 @@ def _top_up_pool():
             try:
                 if json.loads(raw.strip() or "{}").get("type") == "result":
                     with _LOCK:
-                        if len(POOL) < 1 and p.poll() is None:
+                        if len(POOL) < POOL_TARGET and p.poll() is None:
                             POOL.append(p)
                             return
                     break
@@ -114,8 +131,8 @@ def take_proc():
         proc = POOL.pop() if POOL else None
     threading.Thread(target=_top_up_pool, daemon=True).start()
     if proc is not None and proc.poll() is None:
-        return proc
-    return spawn_claude()
+        return proc, "pool"
+    return spawn_claude(), "cold"
 
 
 def reaper():
@@ -132,7 +149,8 @@ def reaper():
 
 
 threading.Thread(target=reaper, daemon=True).start()
-threading.Thread(target=_top_up_pool, daemon=True).start()  # pre-boot the first spare
+for _ in range(POOL_TARGET):  # pre-boot the spares
+    threading.Thread(target=_top_up_pool, daemon=True).start()
 
 
 def msg_text(m):
@@ -273,6 +291,8 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.flush()
 
         entry = None
+        t0 = time.time()
+        t_first = src_kind = None
         try:
             msgs = body.get("messages", [])
             img_b64 = ""
@@ -289,6 +309,7 @@ class Handler(SimpleHTTPRequestHandler):
                     entry = None
             if entry and len(msgs) > 1:
                 message = msgs[-1]                    # follow-up into the live process
+                src_kind = "resume"
             else:
                 message = msgs[0] if msgs else {"role": "user", "content": ""}
                 if len(msgs) > 1:                     # thread lost (relay/proc restart): rebuild
@@ -299,7 +320,8 @@ class Handler(SimpleHTTPRequestHandler):
                                list(msgs[0]["content"]) + [{"type": "text", "text": story}]
                                if isinstance(msgs[0].get("content"), list)
                                else msg_text(msgs[0]) + "\n\n" + story}
-                entry = {"proc": take_proc(), "lock": threading.Lock(), "ts": time.time()}
+                proc, src_kind = take_proc()
+                entry = {"proc": proc, "lock": threading.Lock(), "ts": time.time()}
                 with _LOCK:
                     old = THREADS.get(key)
                     if old:
@@ -340,11 +362,13 @@ class Handler(SimpleHTTPRequestHandler):
                                 d = e.get("delta") or {}
                                 if d.get("type") == "text_delta" and d.get("text"):
                                     saw_partial = saw_text = True
+                                    t_first = t_first or time.time()
                                     emit({"t": "delta", "text": d["text"]})
                         elif t == "assistant":
                             for blk in (ev.get("message") or {}).get("content", []):
                                 if blk.get("type") == "text" and blk.get("text") and not saw_partial:
                                     saw_text = True
+                                    t_first = t_first or time.time()
                                     emit({"t": "delta", "text": blk["text"]})
                             harvest((ev.get("message") or {}).get("content"), sources, seen)
                         elif t == "user":
@@ -356,6 +380,7 @@ class Handler(SimpleHTTPRequestHandler):
                                 emit({"t": "error", "message":
                                       str(ev.get("result") or ev.get("error") or ev.get("subtype"))[:300]})
                             elif not saw_text and ev.get("result"):
+                                t_first = t_first or time.time()
                                 emit({"t": "delta", "text": ev["result"]})
                                 saw_text = True
                             break
@@ -370,6 +395,10 @@ class Handler(SimpleHTTPRequestHandler):
                         if sources:
                             emit({"t": "sources", "items": sources[:6]})
                         emit({"t": "done"})
+                    tlog("%s %-6s first=%s done=%.1fs chips=%d%s" % (
+                        key[:8], src_kind or "?",
+                        ("%.1fs" % (t_first - t0)) if t_first else "-",
+                        time.time() - t0, len(sources), " ERROR" if failed else ""))
                 finally:
                     watchdog.cancel()
         except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
@@ -383,6 +412,7 @@ class Handler(SimpleHTTPRequestHandler):
                 with _LOCK:
                     THREADS.pop(key, None)
         except Exception as e:
+            tlog("request failed after %.1fs: %s" % (time.time() - t0, e))
             try:
                 emit({"t": "error", "message": "relay: %s" % e})
             except Exception:
