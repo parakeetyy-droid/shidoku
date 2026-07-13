@@ -17,7 +17,7 @@
     --sat: env(safe-area-inset-top);
     --sab: env(safe-area-inset-bottom);
     /* ── Liquid Glass material (soft, refined) ── */
-    --lg-fill: linear-gradient(150deg, rgba(255,255,255,.15), rgba(205,210,220,.05) 48%, rgba(18,20,24,.085));
+    --lg-fill: linear-gradient(150deg, rgba(255,255,255,.10), rgba(205,210,220,.035) 48%, rgba(18,20,24,.06));
     --lg-blur: blur(22px) saturate(140%);
     --lg-shadow: 0 5px 18px rgba(0,0,0,.26), inset 0 1px 0 rgba(255,255,255,.34), inset 0 -12px 26px rgba(255,255,255,.035);
   }
@@ -49,16 +49,6 @@
     border-radius:999px;-webkit-backdrop-filter:var(--lg-blur);backdrop-filter:var(--lg-blur);
     box-shadow:var(--lg-shadow);white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.4);
   }
-  #retake{
-    position:absolute;top:calc(10px + var(--sat));right:14px;z-index:5;display:none;
-    width:38px;height:38px;border-radius:999px;background:var(--lg-fill);
-    -webkit-backdrop-filter:var(--lg-blur);backdrop-filter:var(--lg-blur);
-    box-shadow:var(--lg-shadow);
-    align-items:center;justify-content:center;
-    transition:transform .18s ease;
-  }
-  #retake svg{filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}
-  #retake:active{transform:scale(.88)}
   #idleHint{
     position:absolute;inset:0;z-index:1;display:flex;align-items:center;justify-content:center;
     text-align:center;padding:0 44px;color:var(--dim);font-size:13px;line-height:1.9;
@@ -69,26 +59,26 @@
   #bar{
     position:absolute;left:0;right:0;bottom:0;z-index:4;
     display:flex;align-items:center;justify-content:space-between;
-    padding:26px 46px calc(52px + var(--sab));
+    padding:26px 42px calc(34px + var(--sab));
     background:linear-gradient(to top, rgba(0,0,0,.62), rgba(0,0,0,0));
   }
-  .side{position:relative;display:flex;align-items:center;justify-content:center;width:54px;height:54px}
+  .side{position:relative;display:flex;align-items:center;justify-content:center;width:60px;height:60px}
   .side .circ{
-    position:relative;width:54px;height:54px;border-radius:999px;
+    position:relative;width:60px;height:60px;border-radius:999px;
     background:var(--lg-fill);
     -webkit-backdrop-filter:var(--lg-blur);backdrop-filter:var(--lg-blur);
     box-shadow:var(--lg-shadow);
     display:flex;align-items:center;justify-content:center;
     transition:transform .18s ease;
   }
-  .side .circ svg{filter:drop-shadow(0 1px 2px rgba(0,0,0,.55))}
+  .side .circ svg{width:25px;height:25px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.55))}
   .side:active .circ{transform:scale(.9)}
   .side .lbl{
     position:absolute;top:calc(100% + 9px);left:50%;transform:translateX(-50%);
     font-size:15px;color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.7);white-space:nowrap;
   }
   #shutter{
-    position:relative;width:78px;height:78px;border-radius:999px;padding:0;
+    position:relative;width:84px;height:84px;border-radius:999px;padding:0;
     -webkit-backdrop-filter:blur(8px) saturate(130%);backdrop-filter:blur(8px) saturate(130%);
     box-shadow:0 6px 20px rgba(0,0,0,.28);
     transition:transform .3s cubic-bezier(.34,1.56,.64,1);
@@ -110,7 +100,16 @@
   #shutter:active{transform:scale(.95)}
   #shutter:active .core{background:radial-gradient(125% 125% at 32% 26%, rgba(240,240,236,.98), rgba(222,224,228,.82))}
   @keyframes hueDrift{to{filter:blur(.4px) hue-rotate(360deg)}}
-  #cam.isFrozen #shutter{visibility:hidden}
+  /* frozen: the shutter itself becomes the exit button, Apple VI style */
+  #shutter .exit{
+    position:absolute;inset:0;border-radius:999px;display:none;
+    align-items:center;justify-content:center;
+    background:rgba(190,196,206,.30);
+    -webkit-backdrop-filter:blur(16px) saturate(150%);backdrop-filter:blur(16px) saturate(150%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.25), 0 5px 18px rgba(0,0,0,.28);
+  }
+  #cam.isFrozen #shutter .ring, #cam.isFrozen #shutter .core{display:none}
+  #cam.isFrozen #shutter .exit{display:flex}
   #glow{
     position:absolute;inset:0;z-index:6;pointer-events:none;opacity:0;
     box-shadow:inset 0 0 46px 10px rgba(236,102,171,.5), inset 0 0 110px 34px rgba(122,92,238,.28);
@@ -217,14 +216,14 @@
 
   /* ── Liquid Glass edge: specular rim + gloss highlight ── */
   /* the sheet gets NO specular rim - Apple sheets have no border line */
-  .circ::before, #statusPill::before, #retake::before, #toast::before{
+  .circ::before, #statusPill::before, #toast::before{
     content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;padding:1.2px;
     background:linear-gradient(155deg, rgba(255,255,255,.95), rgba(255,255,255,.16) 24%,
       rgba(255,255,255,0) 50%, rgba(255,255,255,.08) 74%, rgba(255,255,255,.6));
     -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite:xor;mask-composite:exclude;
   }
-  .circ::after, #statusPill::after, #retake::after, #toast::after{
+  .circ::after, #statusPill::after, #toast::after{
     content:"";position:absolute;left:12%;right:12%;top:7%;height:42%;border-radius:inherit;
     pointer-events:none;background:linear-gradient(rgba(255,255,255,.32), rgba(255,255,255,0));
     filter:blur(2px);opacity:.75;
@@ -237,9 +236,6 @@
   <video id="vf" playsinline muted autoplay></video>
   <img id="frozen" alt="">
   <div id="statusPill">Starting camera&#8230;</div>
-  <button id="retake" aria-label="Back to camera">
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-  </button>
   <div id="idleHint">Requesting camera access &#8212; tap Allow once.<br>Every launch after that opens straight to the live viewfinder.</div>
   <div id="glow"></div>
 
@@ -254,7 +250,7 @@
       <span class="lbl">Ask</span>
     </button>
 
-    <button id="shutter" aria-label="Capture"><span class="ring"></span><span class="core"></span></button>
+    <button id="shutter" aria-label="Capture"><span class="ring"></span><span class="core"></span><span class="exit"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></button>
 
     <button class="side" id="searchBtn" aria-label="Search">
       <span class="circ">
@@ -333,7 +329,7 @@ if(SIM){
 
 const $ = id => document.getElementById(id);
 const cam=$("cam"), vf=$("vf"), frozen=$("frozen"), statusPill=$("statusPill"),
-      retake=$("retake"), idleHint=$("idleHint"),
+      idleHint=$("idleHint"),
       askBtn=$("askBtn"), shutter=$("shutter"), searchBtn=$("searchBtn"),
       sheet=$("sheet"), thread=$("thread"),
       loadRow=$("loadRow"), errRow=$("errRow"), inp=$("inp"), send=$("send"),
@@ -428,7 +424,6 @@ function freeze(img){
   glow.classList.remove("snap"); void glow.offsetWidth; glow.classList.add("snap");
   stopCamera();
   cam.classList.add("isFrozen");
-  retake.style.display="flex";
   statusPill.style.display="none"; idleHint.style.display="none";
   messages=[]; thread.innerHTML=""; clearErr();
 }
@@ -436,15 +431,13 @@ function unfreeze(){
   frozenB64=null; messages=[]; thread.innerHTML=""; inp.value=""; clearErr();
   frozen.style.display="none"; frozen.classList.remove("dim","frzAnim");
   cam.classList.remove("isFrozen");
-  retake.style.display="none";
   closeSheet();
   if(fallback) enterFallback("The shutter and Ask open the system camera.");
   else startCamera();
 }
-retake.onclick=unfreeze;
-
 shutter.onclick=()=>{
-  if(starting || frozenB64) return;
+  if(frozenB64){ unfreeze(); return; }   // frozen: the shutter IS the exit button
+  if(starting) return;
   if(live){
     if(!vf.videoWidth) return;
     freeze(frameToJpeg(vf, vf.videoWidth, vf.videoHeight));
@@ -710,7 +703,7 @@ if(SIM){
   im.onload=()=>{ simFrame=frameToJpeg(im,im.naturalWidth,im.naturalHeight); };
   im.src="sample.jpg?v=3";
   // shutter and Ask capture the sample, exercising the real freeze/analyze path
-  shutter.onclick=()=>{ if(frozenB64||!simFrame) return; freeze(simFrame); };
+  shutter.onclick=()=>{ if(frozenB64){ unfreeze(); return; } if(!simFrame) return; freeze(simFrame); };
   askBtn.onclick=()=>{
     if(frozenB64){ openSheet(); if(!messages.length && !loading) firstAsk(); return; }
     if(!simFrame) return;

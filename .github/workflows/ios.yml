@@ -37,6 +37,7 @@ jobs:
         run: |
           P=ios/App/App/Info.plist
           /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string 'Shidoku shows a live viewfinder and analyzes the photo you capture.'" "$P"
+          /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string 'Shidoku connects to your own relay server on your home Wi-Fi.'" "$P"
           /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" "$P" || true
           /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsArbitraryLoads bool true" "$P" || true
           /usr/libexec/PlistBuddy -c "Delete :UISupportedInterfaceOrientations" "$P" || true
