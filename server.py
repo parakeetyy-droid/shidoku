@@ -63,7 +63,9 @@ def spawn_claude():
            "immediately from what you can see and already know. Use the "
            "WebSearch tool ONLY when you cannot confidently name what is in "
            "the photo, or when the answer depends on current information. "
-           "Never search to double-check something you already know."]
+           "Never search to double-check something you already know - EXCEPT "
+           "when the user doubts or challenges a name you gave: then verify "
+           "with a web search before answering."]
     if os.name == "nt" and CLAUDE_BIN.lower().endswith((".cmd", ".bat")):
         cmd = ["cmd", "/c"] + cmd
     env = {k: v for k, v in os.environ.items()          # scrub nested-session markers
@@ -139,6 +141,36 @@ def msg_text(m):
     if isinstance(c, list):
         return "\n".join(b.get("text", "") for b in c if b.get("type") == "text")
     return c or ""
+
+
+def harvest(x, sources, seen):
+    """Best-effort: collect {title,url} pairs from any nested tool-result shape.
+    This CLI version returns WebSearch results as one STRING:
+    'Web search results for query: ...\\n\\nLinks: [{"title":...,"url":...},...]'."""
+    if isinstance(x, str):
+        i = x.find("Links: [")
+        if i >= 0:
+            try:
+                val, _ = json.JSONDecoder().raw_decode(x, i + 7)
+                harvest(val, sources, seen)
+            except ValueError:
+                pass
+        elif x.lstrip().startswith(("[", "{")):
+            try:
+                harvest(json.loads(x), sources, seen)
+            except ValueError:
+                pass
+        return
+    if isinstance(x, dict):
+        u = x.get("url")
+        if isinstance(u, str) and u.startswith("http") and u not in seen:
+            seen.add(u)
+            sources.append({"title": x.get("title") or u, "url": u})
+        for v in x.values():
+            harvest(v, sources, seen)
+    elif isinstance(x, list):
+        for v in x:
+            harvest(v, sources, seen)
 
 
 # Search: do NOT try uploading frames to Google's endpoints. Browsers get 403
@@ -311,16 +343,13 @@ class Handler(SimpleHTTPRequestHandler):
                                     emit({"t": "delta", "text": d["text"]})
                         elif t == "assistant":
                             for blk in (ev.get("message") or {}).get("content", []):
-                                bt = blk.get("type")
-                                if bt == "text" and blk.get("text") and not saw_partial:
+                                if blk.get("type") == "text" and blk.get("text") and not saw_partial:
                                     saw_text = True
                                     emit({"t": "delta", "text": blk["text"]})
-                                elif bt == "web_search_tool_result":
-                                    for it in blk.get("content") or []:
-                                        u = isinstance(it, dict) and it.get("url")
-                                        if u and u not in seen:
-                                            seen.add(u)
-                                            sources.append({"title": it.get("title") or u, "url": u})
+                            harvest((ev.get("message") or {}).get("content"), sources, seen)
+                        elif t == "user":
+                            # web-search results ride back as tool_result blocks
+                            harvest((ev.get("message") or {}).get("content"), sources, seen)
                         elif t == "result":
                             if ev.get("subtype") != "success" and not saw_text:
                                 failed = True
