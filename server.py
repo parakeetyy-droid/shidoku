@@ -59,13 +59,16 @@ def spawn_claude():
            # tooling instructions): prefill is the bulk of first-token latency
            "--system-prompt",
            "You are the engine of Shidoku, a personal Visual Intelligence "
-           "camera app. Answer exactly per the user's instructions. Use the "
-           "WebSearch tool whenever an exact name, a brand, or a current fact "
-           "needs verification rather than guessing."]
+           "camera app. Answer exactly per the user's instructions, starting "
+           "immediately from what you can see and already know. Use the "
+           "WebSearch tool ONLY when you cannot confidently name what is in "
+           "the photo, or when the answer depends on current information. "
+           "Never search to double-check something you already know."]
     if os.name == "nt" and CLAUDE_BIN.lower().endswith((".cmd", ".bat")):
         cmd = ["cmd", "/c"] + cmd
     env = {k: v for k, v in os.environ.items()          # scrub nested-session markers
            if not k.startswith(("CLAUDECODE", "CLAUDE_CODE_"))}
+    env["MAX_THINKING_TOKENS"] = "0"  # extended thinking = 6+ silent seconds
     return subprocess.Popen(cmd, cwd=BASE, stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                             text=True, encoding="utf-8", errors="replace",

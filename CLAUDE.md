@@ -52,11 +52,18 @@ working web app and the single source of truth — the shell wraps it verbatim.
   forwards text_deltas, falls back to whole assistant blocks if partials are
   unsupported, and hard-kills a wedged subprocess after 240s. Nested-session
   env markers (CLAUDECODE*/CLAUDE_CODE_*) are scrubbed before spawning.
-- Measured latency (2026-07-13, sonnet, hot pool, 1100px frame): first Ask
-  ~4.9s to first delta / ~6.4s done; follow-ups ~2.1s. History: naive
-  spawn-per-request + Read tool was 8s/11s. Frames are downscaled to 1100px
-  client-side (frameToJpeg MAX) — fewer vision tokens is a real first-token
-  win; don't raise it without remeasuring.
+- Measured latency (2026-07-13, sonnet, hot pool, 1100px frame, REAL
+  ASK_PROMPT payload): first Ask ~1.7-2.1s to first delta / ~6s done
+  (long answer streams while reading); follow-ups ~2.2s. Two silent killers
+  found by timestamping the event stream — both must STAY fixed:
+  (1) extended thinking was on by default = 6+ mute seconds → spawn env sets
+  MAX_THINKING_TOKENS=0 (the owner's v1 spec always said thinking off);
+  (2) "verify names with web search" prompting made the model search things
+  it already knew (~3s wasted) → both prompts now say search ONLY when it
+  cannot confidently name the thing or the fact is current. History: naive
+  spawn-per-request + Read tool + thinking + eager search = 8-21s first word.
+  Frames are downscaled to 1100px client-side (frameToJpeg MAX) — fewer
+  vision tokens is a real first-token win; don't raise it without remeasuring.
 - **Search v1**: app POSTs the frozen frame to /api/lens → relay stores it in
   memory (10-min TTL, 30 cap) → returns `lens.google.com/uploadbyurl?url=`
   pointing at the relay's /frame/<id>.jpg → app window.opens it (the tab is
