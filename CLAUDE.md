@@ -86,8 +86,14 @@ working web app and the single source of truth — the shell wraps it verbatim.
   lives in git history (commit 3cf5a07 and earlier) if ever needed.
 - Multi-turn: resend the full messages array; the image rides only in the first user message.
 - ASK_PROMPT (index.html) is English-learner-first: lead with the everyday
-  American name incl. genericized trademarks (Kleenex/Q-tips/Band-Aids),
-  collocations, compact-by-default. Don't flatten it back to generic captioning.
+  American name incl. genericized trademarks, collocations, compact-by-default.
+  Don't flatten it back to generic captioning. **It deliberately names NO
+  example brands** (owner decision 2026-07-13): the old "(tissues are
+  'Kleenex', swabs are 'Q-tips'...)" line pre-fed answers and made his own
+  tests unprovable. The category instruction alone triggers the reflex —
+  verified: with examples stripped, the model still volunteered "Kleenex...
+  universally used regardless of brand" from its own knowledge, unsearched.
+  Do not re-add brand examples.
 - Config knobs: RELAY, MAX_TOKENS, ASK_PROMPT in index.html; MODEL / PORT /
   HOST / TLS / PUBLIC_URL / CLAUDE_BIN in server.py (all env- or flag-
   overridable).
