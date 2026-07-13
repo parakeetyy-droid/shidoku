@@ -40,18 +40,94 @@ HOST = arg("--host") or os.environ.get("HOST", "127.0.0.1")  # 0.0.0.0 = reachab
 TLS = arg("--tls")  # dir with cert.pem + key.pem -> serves HTTPS, plus http on PORT+1 for /ca.crt
 CLAUDE_BIN = arg("--claude") or os.environ.get("CLAUDE_BIN") or shutil.which("claude") or "claude"
 
-TMP = os.path.join(BASE, "tmp")           # captured frames for the Read tool (gitignored)
-SESSIONS = {}                             # image-hash -> claude session id (follow-ups resume)
-CLAUDE_TIMEOUT = 240                      # hard kill for a wedged subprocess
+CLAUDE_TIMEOUT = 240                      # hard kill for a wedged turn
 
+# ── warm persistent claude processes ──
+# Latency design: `claude -p --input-format stream-json` keeps ONE process per
+# capture alive for the whole thread - the CLI boots once (and a spare is
+# pre-booted in the pool before the user even taps), the image rides INLINE in
+# the first message (no Read tool, no extra model turn), and follow-ups are
+# just new stdin lines into the same process. First token ~2-4s vs ~8s for
+# spawn-per-request with a Read roundtrip.
 
-def claude_cmd(extra):
-    cmd = [CLAUDE_BIN, "-p", "--output-format", "stream-json",
-           "--include-partial-messages", "--verbose",
-           "--model", MODEL, "--allowedTools", "Read,WebSearch"]
+def spawn_claude():
+    cmd = [CLAUDE_BIN, "-p", "--input-format", "stream-json",
+           "--output-format", "stream-json", "--include-partial-messages",
+           "--verbose", "--model", MODEL, "--allowedTools", "WebSearch",
+           "--strict-mcp-config",  # no MCP servers: they only slow first init
+           # replace Claude Code's huge default system prompt (~15k tokens of
+           # tooling instructions): prefill is the bulk of first-token latency
+           "--system-prompt",
+           "You are the engine of Shidoku, a personal Visual Intelligence "
+           "camera app. Answer exactly per the user's instructions. Use the "
+           "WebSearch tool whenever an exact name, a brand, or a current fact "
+           "needs verification rather than guessing."]
     if os.name == "nt" and CLAUDE_BIN.lower().endswith((".cmd", ".bat")):
         cmd = ["cmd", "/c"] + cmd
-    return cmd + extra
+    env = {k: v for k, v in os.environ.items()          # scrub nested-session markers
+           if not k.startswith(("CLAUDECODE", "CLAUDE_CODE_"))}
+    return subprocess.Popen(cmd, cwd=BASE, stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                            text=True, encoding="utf-8", errors="replace",
+                            bufsize=1, env=env)
+
+
+POOL = []                 # pre-booted AND primed spares (target: 1)
+THREADS = {}              # image-hash -> {proc, lock, ts}
+_LOCK = threading.Lock()
+
+
+def _top_up_pool():
+    """Spawn a spare and run one throwaway turn through it: the CLI does its
+    expensive init (config, session, API handshake) lazily on the FIRST
+    message, so priming moves all of it off the user's first Ask."""
+    try:
+        p = spawn_claude()
+        p.stdin.write(json.dumps({"type": "user", "message":
+                                  {"role": "user", "content": "Reply with exactly: ok"}}) + "\n")
+        p.stdin.flush()
+        deadline = time.time() + 60
+        for raw in p.stdout:
+            if time.time() > deadline:
+                break
+            try:
+                if json.loads(raw.strip() or "{}").get("type") == "result":
+                    with _LOCK:
+                        if len(POOL) < 1 and p.poll() is None:
+                            POOL.append(p)
+                            return
+                    break
+            except ValueError:
+                continue
+        p.kill()
+    except Exception:
+        pass
+
+
+def take_proc():
+    with _LOCK:
+        proc = POOL.pop() if POOL else None
+    threading.Thread(target=_top_up_pool, daemon=True).start()
+    if proc is not None and proc.poll() is None:
+        return proc
+    return spawn_claude()
+
+
+def reaper():
+    while True:
+        time.sleep(60)
+        now = time.time()
+        with _LOCK:
+            for k in [k for k, t in THREADS.items() if now - t["ts"] > 600]:
+                t = THREADS.pop(k)
+                try:
+                    t["proc"].kill()
+                except Exception:
+                    pass
+
+
+threading.Thread(target=reaper, daemon=True).start()
+threading.Thread(target=_top_up_pool, daemon=True).start()  # pre-boot the first spare
 
 
 def msg_text(m):
@@ -161,102 +237,124 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write((json.dumps(obj) + "\n").encode("utf-8"))
             self.wfile.flush()
 
-        proc = None
+        entry = None
         try:
             msgs = body.get("messages", [])
-            img_b64 = None
+            img_b64 = ""
             if msgs and isinstance(msgs[0].get("content"), list):
                 for b in msgs[0]["content"]:
                     if b.get("type") == "image":
                         img_b64 = b["source"]["data"]
-            key = hashlib.sha256((img_b64 or "").encode()).hexdigest()[:16]
-            sid = SESSIONS.get(key)
+            key = hashlib.sha256(img_b64.encode()).hexdigest()[:16]
 
-            if sid and len(msgs) > 1:
-                prompt = msg_text(msgs[-1])          # follow-up: resume the same chat
-                cmd = claude_cmd(["--resume", sid])
+            with _LOCK:
+                entry = THREADS.get(key)
+                if entry and entry["proc"].poll() is not None:
+                    THREADS.pop(key, None)
+                    entry = None
+            if entry and len(msgs) > 1:
+                message = msgs[-1]                    # follow-up into the live process
             else:
-                prompt = msg_text(msgs[0]) if msgs else ""
-                if len(msgs) > 1:                    # relay restarted mid-thread
-                    prompt += "\n\nThe user's follow-up question: " + msg_text(msgs[-1])
-                if img_b64:
-                    os.makedirs(TMP, exist_ok=True)
-                    img_path = os.path.join(TMP, "frame-%s.jpg" % key)
-                    with open(img_path, "wb") as f:
-                        f.write(base64.b64decode(img_b64))
-                    prompt = ("First use the Read tool on the captured camera frame at "
-                              "%s and look at it carefully. Then answer per the "
-                              "instructions below.\n\n" % img_path) + prompt
-                cmd = claude_cmd([])
+                message = msgs[0] if msgs else {"role": "user", "content": ""}
+                if len(msgs) > 1:                     # thread lost (relay/proc restart): rebuild
+                    story = "\n\n".join(
+                        ("You answered earlier:\n" if m.get("role") == "assistant"
+                         else "The user then asked:\n") + msg_text(m) for m in msgs[1:])
+                    message = {"role": "user", "content":
+                               list(msgs[0]["content"]) + [{"type": "text", "text": story}]
+                               if isinstance(msgs[0].get("content"), list)
+                               else msg_text(msgs[0]) + "\n\n" + story}
+                entry = {"proc": take_proc(), "lock": threading.Lock(), "ts": time.time()}
+                with _LOCK:
+                    old = THREADS.get(key)
+                    if old:
+                        try:
+                            old["proc"].kill()
+                        except Exception:
+                            pass
+                    THREADS[key] = entry
+                    while len(THREADS) > 4:           # each live process holds real RAM
+                        victim = THREADS.pop(next(iter(THREADS)))
+                        try:
+                            victim["proc"].kill()
+                        except Exception:
+                            pass
 
-            # scrub nested-session markers: the relay may itself have been
-            # launched from inside a Claude Code session
-            env = {k: v for k, v in os.environ.items()
-                   if not k.startswith(("CLAUDECODE", "CLAUDE_CODE_"))}
-            proc = subprocess.Popen(cmd, cwd=BASE, stdin=subprocess.PIPE,
-                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    text=True, encoding="utf-8", errors="replace", env=env)
-            watchdog = threading.Timer(CLAUDE_TIMEOUT, proc.kill)
-            watchdog.start()
-            try:
-                proc.stdin.write(prompt)
-                proc.stdin.close()
-                saw_partial = saw_text = failed = False
-                for raw in proc.stdout:
-                    raw = raw.strip()
-                    if not raw:
-                        continue
-                    try:
-                        ev = json.loads(raw)
-                    except ValueError:
-                        continue
-                    t = ev.get("type")
-                    if t == "system" and ev.get("subtype") == "init" and ev.get("session_id"):
-                        SESSIONS[key] = ev["session_id"]
-                        while len(SESSIONS) > 40:
-                            SESSIONS.pop(next(iter(SESSIONS)))
-                    elif t == "stream_event":
-                        e = ev.get("event") or {}
-                        if e.get("type") == "content_block_delta":
-                            d = e.get("delta") or {}
-                            if d.get("type") == "text_delta" and d.get("text"):
-                                saw_partial = saw_text = True
-                                emit({"t": "delta", "text": d["text"]})
-                    elif t == "assistant" and not saw_partial:
-                        # this claude version didn't stream partials: emit whole blocks
-                        for blk in (ev.get("message") or {}).get("content", []):
-                            if blk.get("type") == "text" and blk.get("text"):
+            with entry["lock"]:
+                entry["ts"] = time.time()
+                proc = entry["proc"]
+                watchdog = threading.Timer(CLAUDE_TIMEOUT, proc.kill)
+                watchdog.start()
+                try:
+                    proc.stdin.write(json.dumps({"type": "user", "message": message}) + "\n")
+                    proc.stdin.flush()
+                    saw_partial = saw_text = failed = False
+                    sources, seen = [], set()
+                    for raw in proc.stdout:
+                        raw = raw.strip()
+                        if not raw:
+                            continue
+                        try:
+                            ev = json.loads(raw)
+                        except ValueError:
+                            continue
+                        t = ev.get("type")
+                        if t == "stream_event":
+                            e = ev.get("event") or {}
+                            if e.get("type") == "content_block_delta":
+                                d = e.get("delta") or {}
+                                if d.get("type") == "text_delta" and d.get("text"):
+                                    saw_partial = saw_text = True
+                                    emit({"t": "delta", "text": d["text"]})
+                        elif t == "assistant":
+                            for blk in (ev.get("message") or {}).get("content", []):
+                                bt = blk.get("type")
+                                if bt == "text" and blk.get("text") and not saw_partial:
+                                    saw_text = True
+                                    emit({"t": "delta", "text": blk["text"]})
+                                elif bt == "web_search_tool_result":
+                                    for it in blk.get("content") or []:
+                                        u = isinstance(it, dict) and it.get("url")
+                                        if u and u not in seen:
+                                            seen.add(u)
+                                            sources.append({"title": it.get("title") or u, "url": u})
+                        elif t == "result":
+                            if ev.get("subtype") != "success" and not saw_text:
+                                failed = True
+                                emit({"t": "error", "message":
+                                      str(ev.get("result") or ev.get("error") or ev.get("subtype"))[:300]})
+                            elif not saw_text and ev.get("result"):
+                                emit({"t": "delta", "text": ev["result"]})
                                 saw_text = True
-                                emit({"t": "delta", "text": blk["text"]})
-                    elif t == "result":
-                        if ev.get("subtype") != "success" and not saw_text:
+                            break
+                    else:  # stdout EOF: the process died mid-turn
+                        if not saw_text:
                             failed = True
-                            emit({"t": "error", "message":
-                                  str(ev.get("result") or ev.get("error") or ev.get("subtype"))[:300]})
-                        elif not saw_text and ev.get("result"):
-                            emit({"t": "delta", "text": ev["result"]})
-                            saw_text = True
-                        break
-                rc = proc.wait(timeout=15)
-                if not saw_text and not failed:
-                    err = (proc.stderr.read() or "")[:300].strip()
-                    failed = True
-                    emit({"t": "error", "message":
-                          "claude produced no answer (exit %s)%s" % (rc, (": " + err) if err else "")})
-                if not failed:
-                    emit({"t": "done"})
-            finally:
-                watchdog.cancel()
+                            emit({"t": "error", "message": "the brain restarted - ask again"})
+                        with _LOCK:
+                            THREADS.pop(key, None)
+                    entry["ts"] = time.time()
+                    if not failed:
+                        if sources:
+                            emit({"t": "sources", "items": sources[:6]})
+                        emit({"t": "done"})
+                finally:
+                    watchdog.cancel()
         except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
-            pass  # the app went away mid-stream; nothing to do
+            # the app went away mid-stream: kill the proc so its stdout can't
+            # jam a future turn with half-consumed events
+            if entry:
+                try:
+                    entry["proc"].kill()
+                except Exception:
+                    pass
+                with _LOCK:
+                    THREADS.pop(key, None)
         except Exception as e:
             try:
                 emit({"t": "error", "message": "relay: %s" % e})
             except Exception:
                 pass
-        finally:
-            if proc and proc.poll() is None:
-                proc.kill()
 
 
 if __name__ == "__main__":

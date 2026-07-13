@@ -414,7 +414,7 @@ function liquefy(){
 }
 
 function frameToJpeg(source,w,h){
-  const MAX=1400, s=Math.min(1, MAX/Math.max(w,h));
+  const MAX=1100, s=Math.min(1, MAX/Math.max(w,h));  // smaller = fewer vision tokens = faster first word
   cv.width=Math.round(w*s); cv.height=Math.round(h*s);
   cv.getContext("2d").drawImage(source,0,0,cv.width,cv.height);
   const dataUrl=cv.toDataURL("image/jpeg",0.85);

@@ -27,14 +27,21 @@ working web app and the single source of truth — the shell wraps it verbatim.
 
 ## Architecture
 - index.html (whole app, vanilla JS) → same-origin POST /api/claude → server.py
-  (stdlib-only Python relay: serves static files AND runs the brain as a
-  headless **`claude -p` subprocess** — the owner's Claude subscription, NO API
-  key anywhere). The frame is written to tmp/frame-<hash>.jpg (gitignored) and
-  the model Reads it; `--allowedTools Read,WebSearch` gives it web search for
-  the Kleenex problem (exact/everyday names verified on the web in-answer).
-  Follow-ups `--resume` the same claude session (relay keeps an image-hash →
-  session-id map; if the relay restarted, it rebuilds context in one shot).
-  The claude CLI must be installed and logged in wherever the relay runs.
+  (stdlib-only Python relay: serves static files AND runs the brain as
+  headless **persistent `claude -p` processes** — the owner's Claude
+  subscription, NO API key anywhere). Latency architecture (all four matter;
+  don't regress any): (1) `--input-format stream-json` keeps ONE process per
+  capture alive — follow-ups are new stdin lines, no re-boot; (2) a POOL spare
+  is pre-spawned AND **primed with a throwaway turn** (the CLI inits lazily on
+  first message — an unprimed spare saves almost nothing); (3) the image rides
+  INLINE in the first message (no Read tool, no extra model turn, no temp
+  files); (4) `--system-prompt` replaces Claude Code's ~15k-token default
+  (prefill was the bulk of first-token latency) and `--strict-mcp-config`
+  skips MCP loading. `--allowedTools WebSearch` covers the Kleenex problem
+  (exact/everyday names verified on the web in-answer). If the relay or a
+  process died mid-thread, the handler rebuilds context in one message from
+  the client's full history. The claude CLI must be installed and logged in
+  wherever the relay runs.
 - **Streaming**: relay → app is NDJSON, one JSON per line:
   `{"t":"delta","text"}` (incremental), `{"t":"sources","items":[{title,url}]}`,
   `{"t":"done"}`, `{"t":"error","message"}`. Errors are in-stream (HTTP is
@@ -45,9 +52,11 @@ working web app and the single source of truth — the shell wraps it verbatim.
   forwards text_deltas, falls back to whole assistant blocks if partials are
   unsupported, and hard-kills a wedged subprocess after 240s. Nested-session
   env markers (CLAUDECODE*/CLAUDE_CODE_*) are scrubbed before spawning.
-- Measured latency (2026-07-13, sonnet): first delta ~8s, done ~11s on a first
-  Ask (CLI boot + image read); follow-ups ~6s. Gemini flash-lite was ~6s total
-  — the owner accepted the trade for answer quality + no key management.
+- Measured latency (2026-07-13, sonnet, hot pool, 1100px frame): first Ask
+  ~4.9s to first delta / ~6.4s done; follow-ups ~2.1s. History: naive
+  spawn-per-request + Read tool was 8s/11s. Frames are downscaled to 1100px
+  client-side (frameToJpeg MAX) — fewer vision tokens is a real first-token
+  win; don't raise it without remeasuring.
 - **Search v1**: app POSTs the frozen frame to /api/lens → relay stores it in
   memory (10-min TTL, 30 cap) → returns `lens.google.com/uploadbyurl?url=`
   pointing at the relay's /frame/<id>.jpg → app window.opens it (the tab is
