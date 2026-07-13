@@ -1,7 +1,7 @@
 # Shidoku — personal Visual Intelligence app (owner: Pakē)
 
 Camera-first iPhone app (Apple Visual Intelligence parity: Ask / shutter /
-Search bottom bar). **Ask** = Gemini answer in the sheet. **Search** (v1,
+Search bottom bar). **Ask** = Claude answer in the sheet. **Search** (v1,
 owner request 2026-07-13) = hand the frame to Google Lens. Do not add
 features unprompted.
 
@@ -27,25 +27,27 @@ working web app and the single source of truth — the shell wraps it verbatim.
 
 ## Architecture
 - index.html (whole app, vanilla JS) → same-origin POST /api/claude → server.py
-  (stdlib-only Python relay: serves static files AND translates the app's
-  vendor-neutral body into NATIVE Gemini `streamGenerateContent?alt=sse` with
-  **Google Search grounding** (`tools:[{google_search:{}}]`) always enabled —
-  the model searches when names/facts matter and returns citations). API key
-  ONLY in the GEMINI_API_KEY env var on the VPS — never in client code.
+  (stdlib-only Python relay: serves static files AND runs the brain as a
+  headless **`claude -p` subprocess** — the owner's Claude subscription, NO API
+  key anywhere). The frame is written to tmp/frame-<hash>.jpg (gitignored) and
+  the model Reads it; `--allowedTools Read,WebSearch` gives it web search for
+  the Kleenex problem (exact/everyday names verified on the web in-answer).
+  Follow-ups `--resume` the same claude session (relay keeps an image-hash →
+  session-id map; if the relay restarted, it rebuilds context in one shot).
+  The claude CLI must be installed and logged in wherever the relay runs.
 - **Streaming**: relay → app is NDJSON, one JSON per line:
   `{"t":"delta","text"}` (incremental), `{"t":"sources","items":[{title,url}]}`,
   `{"t":"done"}`, `{"t":"error","message"}`. Errors are in-stream (HTTP is
   always 200 once streaming starts). The client renders markdown progressively
-  per delta and shows sources as glass chips. Grounding is native-endpoint-only
-  (the OpenAI-compat endpoint rejects google_search — do not go back).
-- **Free-tier grounding wall (verified 2026-07-13)**: with the owner's free key,
-  ANY request carrying google_search 429s (RESOURCE_EXHAUSTED, no per-metric
-  detail) while the same request without tools succeeds — on flash-lite AND
-  flash-latest, with fresh daily quota. It was never the daily request quota.
-  server.py therefore retries once WITHOUT tools on a 429 (safe: the 429 raises
-  at open, before any NDJSON reached the app). Ungrounded answers just show no
-  source chips; a paid key upgrades back to grounded automatically. Do not
-  remove this fallback — without it every Ask dies on free tier.
+  per delta and shows sources as glass chips (the claude brain currently emits
+  no sources event). The subprocess speaks
+  `--output-format stream-json --include-partial-messages --verbose`; the relay
+  forwards text_deltas, falls back to whole assistant blocks if partials are
+  unsupported, and hard-kills a wedged subprocess after 240s. Nested-session
+  env markers (CLAUDECODE*/CLAUDE_CODE_*) are scrubbed before spawning.
+- Measured latency (2026-07-13, sonnet): first delta ~8s, done ~11s on a first
+  Ask (CLI boot + image read); follow-ups ~6s. Gemini flash-lite was ~6s total
+  — the owner accepted the trade for answer quality + no key management.
 - **Search v1**: app POSTs the frozen frame to /api/lens → relay stores it in
   memory (10-min TTL, 30 cap) → returns `lens.google.com/uploadbyurl?url=`
   pointing at the relay's /frame/<id>.jpg → app window.opens it (the tab is
@@ -59,29 +61,35 @@ working web app and the single source of truth — the shell wraps it verbatim.
   all three verified 2026-07-13.
 - The CLIENT stays vendor-neutral (Anthropic-shaped content blocks in `messages`).
   Changing brains = rewriting server.py's translation only.
-- Brain history: Claude Sonnet 5 (v1) → Gemini via OpenAI-compat (2026-07-09) →
-  native Gemini + grounding + streaming (2026-07-11). MODEL default
-  gemini-3.1-flash-lite (free-tier reliable; 3.5-flash richer but sheds free load).
+- Brain history: Claude Sonnet 5 API (v1 design) → Gemini via OpenAI-compat
+  (2026-07-09) → native Gemini + grounding + streaming (2026-07-11) →
+  **claude -p headless (2026-07-13**, owner: "don't want to bother with Gemini
+  anymore"; Claude's collocations are better and his subscription means no key
+  top-ups; Gemini free-tier grounding turned out permanently 429'd anyway).
+  MODEL default "sonnet" (fast); "opus" richer/slower. The Gemini relay code
+  lives in git history (commit 3cf5a07 and earlier) if ever needed.
 - Multi-turn: resend the full messages array; the image rides only in the first user message.
 - ASK_PROMPT (index.html) is English-learner-first: lead with the everyday
   American name incl. genericized trademarks (Kleenex/Q-tips/Band-Aids),
   collocations, compact-by-default. Don't flatten it back to generic captioning.
-- Config knobs: RELAY, MAX_TOKENS, ASK_PROMPT in index.html; MODEL/UPSTREAM/PORT/
-  HOST/TLS in server.py (all env- or flag-overridable; UPSTREAM override enables
-  fake-upstream pipeline tests — see scratchpad test_stream_pipeline.py pattern).
+- Config knobs: RELAY, MAX_TOKENS, ASK_PROMPT in index.html; MODEL / PORT /
+  HOST / TLS / PUBLIC_URL / CLAUDE_BIN in server.py (all env- or flag-
+  overridable).
 
 ## Deploy
-VPS: `GEMINI_API_KEY=... python3 server.py` (systemd/pm2; python3 is preinstalled
-on any distro — nothing to install), Caddy for HTTPS, then iPhone Safari → Allow
-camera → Add to Home Screen. Owner is in mainland China: the phone talks only to
-the VPS; the VPS talks to Google. Local test: `python server.py --key X --port 8790`;
-add `--host 0.0.0.0` to reach it from the iPhone over LAN. Plain HTTP on the phone =
-NO live viewfinder (secure-context rule — not a UI bug; the shutter falls back to the
-iOS system camera). For the full zero-tap experience over LAN, add
-`--tls C:\Users\Parak\Documents\shidoku-tls` (self-signed cert, SAN-bound to the PC's
-LAN IP — regenerate if the IP changes; phone must trust it once via /ca.crt served
-on PORT+1). Owner's key is free-tier; gemini-3.5-flash 503s under peak load —
-`--model gemini-3.1-flash-lite` (or gemini-flash-latest) is the tested fallback.
+Local (the owner's PC, current daily driver): double-click
+Documents\start-shidoku.bat → relay on :8790, LAN-reachable (--host 0.0.0.0).
+The PC's claude CLI login is the brain; no keys.
+VPS (future): `python3 server.py --port 8790 --public https://<domain>` behind
+Caddy for HTTPS — **plus the claude CLI installed and logged in on the VPS**
+(this replaced the old zero-install-VPS story when the brain moved to
+claude -p; budget for a Node/npm or native-binary install + one interactive
+`claude login`). Owner is in mainland China: the phone talks only to the VPS.
+Plain HTTP on the phone = NO live viewfinder (secure-context rule — not a UI
+bug; the shutter falls back to the iOS system camera). For the full zero-tap
+experience over LAN, add `--tls C:\Users\Parak\Documents\shidoku-tls`
+(self-signed cert, SAN-bound to the PC's LAN IP — regenerate if the IP
+changes; phone must trust it once via /ca.crt served on PORT+1).
 
 ## History
 HANDOFF.md is the original design record. Its §2 constraints and §3 architecture

@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-# Shidoku relay -- serves the app and streams /api/claude through Gemini's
-# NATIVE endpoint with Google Search grounding enabled. The API key lives
-# ONLY here, in an environment variable -- never in the browser.
+# Shidoku relay -- serves the app; /api/claude streams answers from CLAUDE via
+# a headless `claude -p` subprocess (the owner's Claude subscription -- no API
+# key at all). The Kleenex problem (everyday American names, brand-generics)
+# is covered by Claude's own WebSearch tool: the model verifies names on the
+# web inside the same answer. Brain history: Claude API (v1 design) -> Gemini
+# native+grounding (2026-07-11) -> claude -p headless (2026-07-13, owner:
+# "don't want to bother with Gemini anymore").
 #
 # Wire protocol to the app (NDJSON, one JSON object per line):
 #   {"t":"delta","text":"..."}            incremental answer text
@@ -9,20 +13,20 @@
 #   {"t":"done"}                          end of answer
 #   {"t":"error","message":"..."}         upstream/relay failure
 #
-# Run (VPS):    GEMINI_API_KEY=...  python3 server.py
-# Run (local):  python3 server.py --key TEST --port 8790
+# Run:  python3 server.py --port 8790          (claude CLI must be logged in)
 import base64
+import hashlib
 import json
 import os
+import shutil
+import subprocess
 import sys
+import threading
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 import uuid
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-UPSTREAM_BASE = os.environ.get("UPSTREAM", "https://generativelanguage.googleapis.com/v1beta")
 BASE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -30,38 +34,32 @@ def arg(flag):
     return sys.argv[sys.argv.index(flag) + 1] if flag in sys.argv else None
 
 
-MODEL = arg("--model") or os.environ.get("MODEL", "gemini-3.1-flash-lite")  # free-tier reliable/fast
-KEY = arg("--key") or os.environ.get("GEMINI_API_KEY")
+MODEL = arg("--model") or os.environ.get("MODEL", "sonnet")  # fast; opus = richer, slower
 PORT = int(arg("--port") or os.environ.get("PORT", "8787"))
 HOST = arg("--host") or os.environ.get("HOST", "127.0.0.1")  # 0.0.0.0 = reachable over LAN
 TLS = arg("--tls")  # dir with cert.pem + key.pem -> serves HTTPS, plus http on PORT+1 for /ca.crt
-if not KEY:
-    sys.exit("Missing GEMINI_API_KEY")
+CLAUDE_BIN = arg("--claude") or os.environ.get("CLAUDE_BIN") or shutil.which("claude") or "claude"
+
+TMP = os.path.join(BASE, "tmp")           # captured frames for the Read tool (gitignored)
+SESSIONS = {}                             # image-hash -> claude session id (follow-ups resume)
+CLAUDE_TIMEOUT = 240                      # hard kill for a wedged subprocess
 
 
-def to_gemini(body):
-    """Translate the app's vendor-neutral request body into native Gemini format."""
-    contents = []
-    for m in body.get("messages", []):
-        role = "model" if m.get("role") == "assistant" else "user"
-        parts = []
-        c = m.get("content")
-        if isinstance(c, list):
-            for block in c:
-                if block.get("type") == "text":
-                    parts.append({"text": block["text"]})
-                elif block.get("type") == "image":
-                    src = block["source"]
-                    parts.append({"inline_data": {
-                        "mime_type": src["media_type"], "data": src["data"]}})
-        else:
-            parts.append({"text": c})
-        contents.append({"role": role, "parts": parts})
-    return {
-        "contents": contents,
-        "tools": [{"google_search": {}}],  # grounding: the model searches when facts/names matter
-        "generationConfig": {"maxOutputTokens": body.get("max_tokens", 2000)},
-    }
+def claude_cmd(extra):
+    cmd = [CLAUDE_BIN, "-p", "--output-format", "stream-json",
+           "--include-partial-messages", "--verbose",
+           "--model", MODEL, "--allowedTools", "Read,WebSearch"]
+    if os.name == "nt" and CLAUDE_BIN.lower().endswith((".cmd", ".bat")):
+        cmd = ["cmd", "/c"] + cmd
+    return cmd + extra
+
+
+def msg_text(m):
+    """The text of one vendor-neutral message (string or content blocks)."""
+    c = m.get("content")
+    if isinstance(c, list):
+        return "\n".join(b.get("text", "") for b in c if b.get("type") == "text")
+    return c or ""
 
 
 # Search: do NOT try uploading frames to Google's endpoints. Browsers get 403
@@ -163,69 +161,92 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write((json.dumps(obj) + "\n").encode("utf-8"))
             self.wfile.flush()
 
-        def stream_upstream(payload):
-            url = "%s/models/%s:streamGenerateContent?alt=sse" % (UPSTREAM_BASE, MODEL)
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json", "x-goog-api-key": KEY},
-            )
-            sources, seen = [], set()
-            with urllib.request.urlopen(req, timeout=180) as resp:
-                for raw in resp:
-                    line = raw.decode("utf-8", "replace").strip()
-                    if not line.startswith("data:"):
-                        continue
-                    data = line[5:].strip()
-                    if not data or data == "[DONE]":
-                        continue
-                    chunk = json.loads(data)
-                    for cand in chunk.get("candidates", []):
-                        for part in cand.get("content", {}).get("parts", []):
-                            if part.get("thought"):
-                                continue  # internal reasoning of thinking models
-                            if part.get("text"):
-                                emit({"t": "delta", "text": part["text"]})
-                        gm = cand.get("groundingMetadata") or {}
-                        for gc in gm.get("groundingChunks", []):
-                            web = gc.get("web") or {}
-                            uri = web.get("uri")
-                            if uri and uri not in seen:
-                                seen.add(uri)
-                                sources.append({"title": web.get("title") or uri, "url": uri})
-            if sources:
-                emit({"t": "sources", "items": sources[:6]})
-            emit({"t": "done"})
-
+        proc = None
         try:
-            payload = to_gemini(body)
+            msgs = body.get("messages", [])
+            img_b64 = None
+            if msgs and isinstance(msgs[0].get("content"), list):
+                for b in msgs[0]["content"]:
+                    if b.get("type") == "image":
+                        img_b64 = b["source"]["data"]
+            key = hashlib.sha256((img_b64 or "").encode()).hexdigest()[:16]
+            sid = SESSIONS.get(key)
+
+            if sid and len(msgs) > 1:
+                prompt = msg_text(msgs[-1])          # follow-up: resume the same chat
+                cmd = claude_cmd(["--resume", sid])
+            else:
+                prompt = msg_text(msgs[0]) if msgs else ""
+                if len(msgs) > 1:                    # relay restarted mid-thread
+                    prompt += "\n\nThe user's follow-up question: " + msg_text(msgs[-1])
+                if img_b64:
+                    os.makedirs(TMP, exist_ok=True)
+                    img_path = os.path.join(TMP, "frame-%s.jpg" % key)
+                    with open(img_path, "wb") as f:
+                        f.write(base64.b64decode(img_b64))
+                    prompt = ("First use the Read tool on the captured camera frame at "
+                              "%s and look at it carefully. Then answer per the "
+                              "instructions below.\n\n" % img_path) + prompt
+                cmd = claude_cmd([])
+
+            # scrub nested-session markers: the relay may itself have been
+            # launched from inside a Claude Code session
+            env = {k: v for k, v in os.environ.items()
+                   if not k.startswith(("CLAUDECODE", "CLAUDE_CODE_"))}
+            proc = subprocess.Popen(cmd, cwd=BASE, stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    text=True, encoding="utf-8", errors="replace", env=env)
+            watchdog = threading.Timer(CLAUDE_TIMEOUT, proc.kill)
+            watchdog.start()
             try:
-                stream_upstream(payload)
-            except urllib.error.HTTPError as e:
-                # Free-tier keys get 429 RESOURCE_EXHAUSTED on any google_search
-                # request even when plain requests are fine (verified 2026-07-13).
-                # The 429 arrives at open, before anything streamed to the app,
-                # so retrying without the tool is safe. Ungrounded answers simply
-                # carry no source chips; if Google grants grounding quota later,
-                # answers upgrade automatically.
-                if e.code == 429 and payload.pop("tools", None):
-                    print("grounding quota exhausted -> answering ungrounded", flush=True)
-                    stream_upstream(payload)
-                else:
-                    raise
-        except urllib.error.HTTPError as e:
-            raw = e.read().decode("utf-8", "replace")
-            try:
-                err = json.loads(raw)
-                if isinstance(err, list) and err:
-                    err = err[0]  # Google wraps errors in a one-element array
-                msg = err.get("error", {}).get("message") or raw[:300]
-            except Exception:
-                msg = raw[:300] or ("upstream HTTP %s" % e.code)
-            try:
-                emit({"t": "error", "message": msg})
-            except Exception:
-                pass
+                proc.stdin.write(prompt)
+                proc.stdin.close()
+                saw_partial = saw_text = failed = False
+                for raw in proc.stdout:
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        ev = json.loads(raw)
+                    except ValueError:
+                        continue
+                    t = ev.get("type")
+                    if t == "system" and ev.get("subtype") == "init" and ev.get("session_id"):
+                        SESSIONS[key] = ev["session_id"]
+                        while len(SESSIONS) > 40:
+                            SESSIONS.pop(next(iter(SESSIONS)))
+                    elif t == "stream_event":
+                        e = ev.get("event") or {}
+                        if e.get("type") == "content_block_delta":
+                            d = e.get("delta") or {}
+                            if d.get("type") == "text_delta" and d.get("text"):
+                                saw_partial = saw_text = True
+                                emit({"t": "delta", "text": d["text"]})
+                    elif t == "assistant" and not saw_partial:
+                        # this claude version didn't stream partials: emit whole blocks
+                        for blk in (ev.get("message") or {}).get("content", []):
+                            if blk.get("type") == "text" and blk.get("text"):
+                                saw_text = True
+                                emit({"t": "delta", "text": blk["text"]})
+                    elif t == "result":
+                        if ev.get("subtype") != "success" and not saw_text:
+                            failed = True
+                            emit({"t": "error", "message":
+                                  str(ev.get("result") or ev.get("error") or ev.get("subtype"))[:300]})
+                        elif not saw_text and ev.get("result"):
+                            emit({"t": "delta", "text": ev["result"]})
+                            saw_text = True
+                        break
+                rc = proc.wait(timeout=15)
+                if not saw_text and not failed:
+                    err = (proc.stderr.read() or "")[:300].strip()
+                    failed = True
+                    emit({"t": "error", "message":
+                          "claude produced no answer (exit %s)%s" % (rc, (": " + err) if err else "")})
+                if not failed:
+                    emit({"t": "done"})
+            finally:
+                watchdog.cancel()
         except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
             pass  # the app went away mid-stream; nothing to do
         except Exception as e:
@@ -233,6 +254,9 @@ class Handler(SimpleHTTPRequestHandler):
                 emit({"t": "error", "message": "relay: %s" % e})
             except Exception:
                 pass
+        finally:
+            if proc and proc.poll() is None:
+                proc.kill()
 
 
 if __name__ == "__main__":
@@ -248,5 +272,5 @@ if __name__ == "__main__":
         helper = ThreadingHTTPServer((HOST, PORT + 1), Handler)  # plain-http side door for /ca.crt
         threading.Thread(target=helper.serve_forever, daemon=True).start()
         print("cert for the phone -> http://%s:%d/ca.crt" % (HOST, PORT + 1))
-    print("shidoku relay -> %s://%s:%d  (model: %s, grounded, streaming)" % (scheme, HOST, PORT, MODEL))
+    print("shidoku relay -> %s://%s:%d  (brain: claude -p, model %s, web search on)" % (scheme, HOST, PORT, MODEL))
     httpd.serve_forever()
