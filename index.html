@@ -704,11 +704,11 @@ if(SIM){
   // take over the camera: no restarts, no fallback chrome, paint the sample scene
   startCamera=()=>{}; enterFallback=()=>{};
   statusPill.style.display="none"; idleHint.style.display="none";
-  cam.style.background="#0B0D10 url('sample.jpg?v=2') center/cover no-repeat";
+  cam.style.background="#0B0D10 url('sample.jpg?v=3') center/cover no-repeat";
   let simFrame=null;
   const im=new Image();
   im.onload=()=>{ simFrame=frameToJpeg(im,im.naturalWidth,im.naturalHeight); };
-  im.src="sample.jpg?v=2";
+  im.src="sample.jpg?v=3";
   // shutter and Ask capture the sample, exercising the real freeze/analyze path
   shutter.onclick=()=>{ if(frozenB64||!simFrame) return; freeze(simFrame); };
   askBtn.onclick=()=>{
