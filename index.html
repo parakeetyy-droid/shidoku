@@ -302,7 +302,7 @@
 // In the native shell (capacitor://) there is no same-origin server, so the
 // relay address must be absolute: the PC on your Wi-Fi for now, the VPS later.
 const NATIVE     = !/^https?:$/.test(location.protocol);
-const RELAY      = NATIVE ? "http://192.168.0.102:8790/api/claude" : "/api/claude";
+const RELAY      = NATIVE ? "http://192.168.0.103:8790/api/claude" : "/api/claude";
 const LENS       = RELAY.replace(/\/claude$/, "/lens");
 const MAX_TOKENS = 4000;
 // The model itself is chosen in server.py on the VPS — this app is vendor-neutral.
