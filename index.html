@@ -49,26 +49,6 @@
     62%{filter:blur(6px) brightness(1.12)}
     100%{filter:none}
   }
-  /* the aurora is the PHOTO ITSELF: a blurred, super-saturated, brightened
-     copy of the capture blooming over the original - so the light wraps the
-     actual subject's outline, like the real VI (its glow emanates from the
-     subject, never from random screen positions). A slow hue sweep adds the
-     spectral drift. */
-  #aurora{
-    position:absolute;inset:0;z-index:2;pointer-events:none;opacity:0;
-    background-size:cover;background-position:center;
-    mix-blend-mode:screen;will-change:opacity,transform,filter;
-  }
-  #aurora.go{animation:aur 1.05s ease-out both}
-  @keyframes aur{
-    0%{opacity:0;transform:scale(1.02);
-       filter:blur(18px) saturate(2.6) brightness(1.06) hue-rotate(0deg)}
-    28%{opacity:.55}
-    65%{opacity:.42;transform:scale(1.07);
-       filter:blur(26px) saturate(2.8) brightness(1.05) hue-rotate(30deg)}
-    100%{opacity:0;transform:scale(1.1);
-       filter:blur(30px) saturate(2.6) brightness(1.04) hue-rotate(55deg)}
-  }
   #statusPill{
     position:absolute;top:calc(14px + var(--sat));left:50%;transform:translateX(-50%);
     z-index:5;font-size:12px;color:#EDEFF2;background:var(--lg-fill);padding:6px 14px;
@@ -143,17 +123,32 @@
   }
   #cam.isFrozen #shutter .ring, #cam.isFrozen #shutter .core{display:none}
   #cam.isFrozen #shutter .exit{display:flex}
-  #glow{
-    position:absolute;inset:0;z-index:6;pointer-events:none;opacity:0;
-    box-shadow:inset 0 0 46px 10px rgba(236,102,171,.5), inset 0 0 110px 34px rgba(122,92,238,.28);
+  /* THE Apple Intelligence edge glow (palette + two-layer structure from the
+     open-source recreations; geometry confirmed against the owner's real VI
+     recording: the capture light is this ring bleeding inward, not
+     subject-light). One sharp band + one wide blurred band, seven Apple
+     colors on a rotating conic plate. */
+  #glow{position:absolute;inset:0;z-index:6;pointer-events:none;opacity:0;overflow:hidden}
+  #glow .gp{
+    position:absolute;inset:0;padding:9px;
+    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;mask-composite:exclude;
   }
+  #glow .g1{filter:blur(5px)}
+  #glow .g2{padding:28px;filter:blur(38px) saturate(140%)}
+  #glow .plate{
+    position:absolute;left:50%;top:50%;width:280vmin;height:280vmin;
+    margin:-140vmin 0 0 -140vmin;
+    background:conic-gradient(from 0deg,#BC82F3,#F5B9EA,#8D9FFF,#AA6EEE,#FF6778,#FFBA71,#C686FF,#BC82F3);
+    transform:rotate(var(--ga,0deg));
+  }
+  #glow.snap .plate,#glow.hello .plate{animation:gsweep 1.9s ease-out both}
+  @keyframes gsweep{from{transform:rotate(var(--ga,0deg))}to{transform:rotate(calc(var(--ga,0deg) + 55deg))}}
   #glow.hello{animation:glowPulse 2.4s ease-out .15s 1}
-  #glow.snap{
-    /* capture flash, Apple-style: a brief NEUTRAL brightness breath - no color */
-    animation:glowPulse .8s ease-out 1;
-    box-shadow:inset 0 0 60px 14px rgba(255,255,255,.20), inset 0 0 140px 46px rgba(255,255,255,.10);
-  }
+  #glow.snap{animation:glowPulse 1.15s ease-out 1}
   #glow.thinking{animation:glowBreathe 2.2s ease-in-out .2s infinite}
+  #glow.thinking .plate{animation:gspin 7s linear infinite}
+  @keyframes gspin{to{transform:rotate(calc(var(--ga,0deg) + 360deg))}}
   @keyframes glowPulse{0%{opacity:0}22%{opacity:1}60%{opacity:.7}100%{opacity:0}}
   @keyframes glowBreathe{0%,100%{opacity:.1}50%{opacity:.75}}
 
@@ -211,7 +206,7 @@
   .pulse{width:8px;height:8px;border-radius:999px;background:rgba(255,255,255,.55);animation:pw 1.1s ease-in-out infinite}
   @keyframes pw{0%,100%{opacity:.25}50%{opacity:1}}
   @media (prefers-reduced-motion: reduce){
-    .pulse,#glow,#shutter .ring,.userMsg,.ans,.tools,.srcRow,#frozen,#aurora{animation:none}
+    .pulse,#glow,#glow .plate,#shutter .ring,.userMsg,.ans,.tools,.srcRow,#frozen{animation:none}
     #sheet,#sheet.open{transition:none}
     .pulse{opacity:.9}
   }
@@ -269,10 +264,12 @@
 <div id="cam">
   <video id="vf" playsinline muted autoplay></video>
   <img id="frozen" alt="">
-  <div id="aurora"></div>
   <div id="statusPill">Starting camera&#8230;</div>
   <div id="idleHint">Requesting camera access &#8212; tap Allow once.<br>Every launch after that opens straight to the live viewfinder.</div>
-  <div id="glow"></div>
+  <div id="glow">
+    <div class="gp g2"><div class="plate"></div></div>
+    <div class="gp g1"><div class="plate"></div></div>
+  </div>
 
   <div id="bar">
     <button class="side" id="askBtn" aria-label="Ask">
@@ -365,7 +362,7 @@ const cam=$("cam"), vf=$("vf"), frozen=$("frozen"), statusPill=$("statusPill"),
       sheet=$("sheet"), thread=$("thread"),
       loadRow=$("loadRow"), errRow=$("errRow"), inp=$("inp"), send=$("send"),
       toast=$("toast"), camInput=$("camInput"), cv=$("cv"),
-      glow=$("glow"), aurora=$("aurora"), bar=$("bar"), sheetHead=$("sheetHead"),
+      glow=$("glow"), bar=$("bar"), sheetHead=$("sheetHead"),
       grab=document.querySelector(".grab");
 
 let stream=null, live=false, starting=false, fallback=false;
@@ -423,16 +420,16 @@ document.addEventListener("visibilitychange", ()=>{
 startCamera();
 
 // ── capture ──
-// capture bloom (cloned from the owner's real Apple VI recording): the photo
-// blurs+brightens for a beat while a glowing copy of ITSELF blooms over it -
-// light that wraps the subject - and the bar fades out and back.
-function bloom(dataUrl){
+// capture (cloned from the owner's real Apple VI recording): the photo blurs+
+// brightens for a beat while the Apple Intelligence edge glow ignites around
+// the screen border and bleeds inward; the bar fades out and back.
+function bloom(){
   bar.classList.add("hide");
   setTimeout(()=>bar.classList.remove("hide"), 1100);
   if(matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   frozen.classList.remove("bloom"); void frozen.offsetWidth; frozen.classList.add("bloom");
-  aurora.style.backgroundImage="url("+dataUrl+")";
-  aurora.classList.remove("go"); void aurora.offsetWidth; aurora.classList.add("go");
+  glow.style.setProperty("--ga", Math.floor(Math.random()*360)+"deg");
+  glow.classList.remove("snap","hello"); void glow.offsetWidth; glow.classList.add("snap");
 }
 
 function frameToJpeg(source,w,h){
@@ -445,7 +442,7 @@ function frameToJpeg(source,w,h){
 function freeze(img){
   frozenB64=img.b64;
   frozen.src=img.dataUrl; frozen.style.display="block";
-  bloom(img.dataUrl);
+  bloom();
   stopCamera();
   cam.classList.add("isFrozen");
   statusPill.style.display="none"; idleHint.style.display="none";
@@ -454,7 +451,7 @@ function freeze(img){
 function unfreeze(){
   frozenB64=null; messages=[]; thread.innerHTML=""; inp.value=""; clearErr();
   frozen.style.display="none"; frozen.classList.remove("dim","bloom");
-  aurora.classList.remove("go"); bar.classList.remove("hide");
+  bar.classList.remove("hide");
   cam.classList.remove("isFrozen");
   closeSheet();
   if(fallback) enterFallback("The shutter and Ask open the system camera.");
