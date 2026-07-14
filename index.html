@@ -66,7 +66,7 @@
   .side .circ{
     /* Apple VI: near-black glass discs, faint rim, filled white glyphs */
     position:relative;width:60px;height:60px;border-radius:999px;
-    background:rgba(28,28,31,.52);
+    background:rgba(30,30,34,.28);
     -webkit-backdrop-filter:var(--lg-blur);backdrop-filter:var(--lg-blur);
     box-shadow:0 4px 14px rgba(0,0,0,.3);
     display:flex;align-items:center;justify-content:center;
@@ -90,7 +90,7 @@
        The hue still drifts slowly, one soft color at a time (owner rule). */
     position:absolute;inset:-3px;border-radius:999px;
     background:radial-gradient(closest-side, rgba(0,0,0,0) 58%,
-      hsla(226,70%,80%,.42) 74%, hsla(226,70%,80%,.16) 87%, rgba(0,0,0,0) 100%);
+      hsla(226,70%,80%,.28) 74%, hsla(226,70%,80%,.10) 87%, rgba(0,0,0,0) 100%);
     filter:blur(2.5px) hue-rotate(0deg);
     animation:hueDrift 10s linear infinite;
   }
@@ -107,7 +107,7 @@
     /* Apple VI: dark glass disc, large thin white X */
     position:absolute;inset:0;border-radius:999px;display:none;
     align-items:center;justify-content:center;
-    background:rgba(44,44,48,.55);
+    background:rgba(44,44,48,.40);
     -webkit-backdrop-filter:blur(18px) saturate(140%);backdrop-filter:blur(18px) saturate(140%);
     box-shadow:0 4px 16px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.06);
   }
