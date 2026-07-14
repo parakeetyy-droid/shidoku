@@ -49,20 +49,25 @@
     62%{filter:blur(6px) brightness(1.12)}
     100%{filter:none}
   }
+  /* the aurora is the PHOTO ITSELF: a blurred, super-saturated, brightened
+     copy of the capture blooming over the original - so the light wraps the
+     actual subject's outline, like the real VI (its glow emanates from the
+     subject, never from random screen positions). A slow hue sweep adds the
+     spectral drift. */
   #aurora{
-    position:absolute;inset:-6%;z-index:2;pointer-events:none;opacity:0;
-    background:
-      radial-gradient(42% 34% at var(--o,30%) 74%, hsla(28,95%,62%,.55), transparent 70%),
-      radial-gradient(46% 38% at var(--v,64%) 86%, hsla(276,85%,66%,.5), transparent 70%),
-      radial-gradient(40% 32% at var(--c,22%) 28%, hsla(196,90%,72%,.4), transparent 70%);
-    filter:blur(26px) saturate(140%);mix-blend-mode:screen;
+    position:absolute;inset:0;z-index:2;pointer-events:none;opacity:0;
+    background-size:cover;background-position:center;
+    mix-blend-mode:screen;will-change:opacity,transform,filter;
   }
   #aurora.go{animation:aur 1.05s ease-out both}
   @keyframes aur{
-    0%{opacity:0;transform:scale(.92)}
-    26%{opacity:.95}
-    60%{opacity:.8;transform:scale(1.05) rotate(2deg)}
-    100%{opacity:0;transform:scale(1.1) rotate(3deg)}
+    0%{opacity:0;transform:scale(1.02);
+       filter:blur(18px) saturate(2.6) brightness(1.06) hue-rotate(0deg)}
+    28%{opacity:.55}
+    65%{opacity:.42;transform:scale(1.07);
+       filter:blur(26px) saturate(2.8) brightness(1.05) hue-rotate(30deg)}
+    100%{opacity:0;transform:scale(1.1);
+       filter:blur(30px) saturate(2.6) brightness(1.04) hue-rotate(55deg)}
   }
   #statusPill{
     position:absolute;top:calc(14px + var(--sat));left:50%;transform:translateX(-50%);
@@ -418,17 +423,15 @@ document.addEventListener("visibilitychange", ()=>{
 startCamera();
 
 // ── capture ──
-// capture bloom (cloned from the owner's real Apple VI recording): blur+
-// brighten the photo, drift colored light across it, fade the bar out and
-// back. Blob positions are randomized so every capture blooms differently.
-function bloom(){
+// capture bloom (cloned from the owner's real Apple VI recording): the photo
+// blurs+brightens for a beat while a glowing copy of ITSELF blooms over it -
+// light that wraps the subject - and the bar fades out and back.
+function bloom(dataUrl){
   bar.classList.add("hide");
   setTimeout(()=>bar.classList.remove("hide"), 1100);
   if(matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   frozen.classList.remove("bloom"); void frozen.offsetWidth; frozen.classList.add("bloom");
-  aurora.style.setProperty("--o",(22+Math.random()*22)+"%");
-  aurora.style.setProperty("--v",(55+Math.random()*26)+"%");
-  aurora.style.setProperty("--c",(14+Math.random()*24)+"%");
+  aurora.style.backgroundImage="url("+dataUrl+")";
   aurora.classList.remove("go"); void aurora.offsetWidth; aurora.classList.add("go");
 }
 
@@ -442,7 +445,7 @@ function frameToJpeg(source,w,h){
 function freeze(img){
   frozenB64=img.b64;
   frozen.src=img.dataUrl; frozen.style.display="block";
-  bloom();
+  bloom(img.dataUrl);
   stopCamera();
   cam.classList.add("isFrozen");
   statusPill.style.display="none"; idleHint.style.display="none";
