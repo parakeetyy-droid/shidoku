@@ -75,6 +75,22 @@ working web app and the single source of truth — the shell wraps it verbatim.
   and /searchbyimage/upload, and a server-side anonymous upload mints a link
   the logged-in browser refuses ("image not associated with your account");
   all three verified 2026-07-13.
+- **Capture light (native, since build #11)**: the capture/thinking/launch
+  glow renders NATIVELY in the Capacitor shell. native/ShidokuGlow.swift is
+  appended to AppDelegate.swift by ios.yml (no pbxproj surgery) and the
+  storyboard is re-pointed at ShidokuViewController — a CAPBridgeViewController
+  subclass that mounts a Core Animation overlay above the webview and registers
+  the `shidokuGlow` WKScriptMessage channel before the page loads (both greps
+  in the ios.yml step fail the build if the Capacitor template changes shape).
+  index.html posts "bloom" / "think" / "idle" / "hello"; when the channel is
+  absent (web, sim) the CSS #glow takes over unchanged. The light is built
+  from the owner's real Apple VI recording, frame-measured: NOT a border ring —
+  seven very large soft radial masses centered ON the screen border
+  (screen-blended, falloff bleeding ~35% inward), igniting staggered over
+  ~1.1 s on capture, breathing desynchronized while thinking, colors
+  reshuffled every capture. The photo blur/brighten stays CSS in the webview.
+  prefers-reduced-motion suppresses both paths; the overlay's layer clock is
+  paused when idle so the drift loops cost nothing.
 - The CLIENT stays vendor-neutral (Anthropic-shaped content blocks in `messages`).
   Changing brains = rewriting server.py's translation only.
 - Brain history: Claude Sonnet 5 API (v1 design) → Gemini via OpenAI-compat
