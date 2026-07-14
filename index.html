@@ -86,12 +86,12 @@
     transition:transform .3s cubic-bezier(.34,1.56,.64,1);
   }
   #shutter .ring{
-    /* Apple VI geometry: a THIN ring hugging the core with a small dark gap.
-       The hue still drifts slowly - one soft color at a time (owner rule). */
-    position:absolute;inset:0;border-radius:999px;background:none;
-    border:3.5px solid hsla(226,80%,78%,.6);
-    box-shadow:0 0 16px hsla(226,80%,72%,.32);
-    filter:blur(.3px) hue-rotate(0deg);
+    /* Apple VI: not a drawn stripe - a soft TRANSLUCENT halo around the core.
+       The hue still drifts slowly, one soft color at a time (owner rule). */
+    position:absolute;inset:-3px;border-radius:999px;
+    background:radial-gradient(closest-side, rgba(0,0,0,0) 58%,
+      hsla(226,70%,80%,.42) 74%, hsla(226,70%,80%,.16) 87%, rgba(0,0,0,0) 100%);
+    filter:blur(2.5px) hue-rotate(0deg);
     animation:hueDrift 10s linear infinite;
   }
   #shutter .core{
@@ -101,7 +101,7 @@
   }
   #shutter:active{transform:scale(.95)}
   #shutter:active .core{background:radial-gradient(125% 125% at 32% 26%, rgba(240,240,236,.98), rgba(222,224,228,.82))}
-  @keyframes hueDrift{to{filter:blur(.4px) hue-rotate(360deg)}}
+  @keyframes hueDrift{to{filter:blur(2.5px) hue-rotate(360deg)}}
   /* frozen: the shutter itself becomes the exit button, Apple VI style */
   #shutter .exit{
     /* Apple VI: dark glass disc, large thin white X */
@@ -119,8 +119,9 @@
   }
   #glow.hello{animation:glowPulse 2.4s ease-out .15s 1}
   #glow.snap{
-    animation:glowPulse 1.3s ease-out 1;
-    box-shadow:inset 0 0 70px 18px rgba(236,102,171,.34), inset 0 0 160px 55px rgba(122,92,238,.20);
+    /* capture flash, Apple-style: a brief NEUTRAL brightness breath - no color */
+    animation:glowPulse .8s ease-out 1;
+    box-shadow:inset 0 0 60px 14px rgba(255,255,255,.20), inset 0 0 140px 46px rgba(255,255,255,.10);
   }
   #glow.thinking{animation:glowBreathe 2.2s ease-in-out .2s infinite}
   @keyframes glowPulse{0%{opacity:0}22%{opacity:1}60%{opacity:.7}100%{opacity:0}}
@@ -363,8 +364,15 @@ async function startCamera(){
       audio:false
     });
     if(document.hidden || frozenB64){ s.getTracks().forEach(t=>t.stop()); return; }
-    stream=s; vf.srcObject=s; vf.style.display="block";
-    requestAnimationFrame(()=>{ if(live) vf.classList.add("on"); });
+    stream=s; vf.srcObject=s;
+    // reveal only once the video knows its real size - showing it earlier
+    // paints a small default-size box for a moment on iOS ("square flash")
+    const reveal=()=>{ if(!live || !vf.videoWidth) return;
+      vf.style.display="block";
+      requestAnimationFrame(()=>{ if(live) vf.classList.add("on"); });
+    };
+    if(vf.videoWidth) reveal();
+    else vf.addEventListener("loadedmetadata", reveal, {once:true});
     vf.play().catch(()=>{}); // don't await: a hidden tab can stall play() forever; autoplay covers playback
     live=true; fallback=false;
     statusPill.style.display="none"; idleHint.style.display="none";
@@ -403,7 +411,7 @@ function liquefy(){
   liqNoise.setAttribute("baseFrequency", fx.toFixed(4)+" "+fy.toFixed(4));
   liqNoise.setAttribute("seed", String(1+Math.floor(Math.random()*999)));
   frozen.style.filter="url(#liquefy)";
-  const t0=performance.now(), DUR=950, S0=70+Math.random()*20;
+  const t0=performance.now(), DUR=650, S0=50+Math.random()*14;  // brief plastic-wrap settle
   (function step(){
     if(run!==liqRun) return;                    // superseded by a newer capture
     const p=Math.min(1,(performance.now()-t0)/DUR);
