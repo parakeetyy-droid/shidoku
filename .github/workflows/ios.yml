@@ -30,6 +30,18 @@ jobs:
           npx cap add ios
           npx cap sync ios
 
+      - name: Embed native glow overlay
+        # Vendor ShidokuGlow.swift into a file that is already in the Xcode
+        # project (no pbxproj surgery), then boot our CAPBridgeViewController
+        # subclass from the storyboard. The greps fail the build loudly if the
+        # Capacitor template ever changes shape — never ship without the glow.
+        run: |
+          cat native/ShidokuGlow.swift >> ios/App/App/AppDelegate.swift
+          SB=ios/App/App/Base.lproj/Main.storyboard
+          sed -i '' 's/customClass="CAPBridgeViewController" customModule="Capacitor"/customClass="ShidokuViewController" customModule="App"/' "$SB"
+          grep -q 'customClass="ShidokuViewController"' "$SB"
+          grep -q 'class ShidokuGlowView' ios/App/App/AppDelegate.swift
+
       - name: Generate icons and splash
         run: npx @capacitor/assets generate --ios --iconBackgroundColor '#0E1013' --splashBackgroundColor '#000000'
 

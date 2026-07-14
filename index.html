@@ -419,15 +419,31 @@ document.addEventListener("visibilitychange", ()=>{
 });
 startCamera();
 
+// ── native glow bridge ──
+// In the Capacitor shell a Swift overlay (native/ShidokuGlow.swift, appended
+// to the app by ios.yml) paints the capture light natively above the webview:
+// real gaussian falloff, screen blending and ProMotion smoothness that CSS
+// inside WKWebView can't reach. It listens on the `shidokuGlow` message
+// channel, registered before the page loads. Everywhere else (web, sim)
+// nativeGlow() returns false and the CSS #glow below keeps working.
+const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)");
+function nativeGlow(cmd){
+  const h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.shidokuGlow;
+  if(!h) return false;
+  if(!REDUCED_MOTION.matches){ try{ h.postMessage(cmd); }catch(_){} }
+  return true;
+}
+
 // ── capture ──
 // capture (cloned from the owner's real Apple VI recording): the photo blurs+
-// brightens for a beat while the Apple Intelligence edge glow ignites around
-// the screen border and bleeds inward; the bar fades out and back.
+// brightens for a beat while colored light blooms from the screen edges and
+// bleeds inward; the bar fades out and back.
 function bloom(){
   bar.classList.add("hide");
   setTimeout(()=>bar.classList.remove("hide"), 1100);
-  if(matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if(REDUCED_MOTION.matches) return;
   frozen.classList.remove("bloom"); void frozen.offsetWidth; frozen.classList.add("bloom");
+  if(nativeGlow("bloom")) return;
   glow.style.setProperty("--ga", Math.floor(Math.random()*360)+"deg");
   glow.classList.remove("snap","hello"); void glow.offsetWidth; glow.classList.add("snap");
 }
@@ -537,7 +553,7 @@ function openSheet(){ sheet.classList.add("open"); frozen.classList.add("dim"); 
 function closeSheet(){ sheet.classList.remove("open"); frozen.classList.remove("dim"); }
 
 // launch glow: one pulse, then the class leaves so .thinking can reuse the element
-glow.classList.add("hello");
+if(!nativeGlow("hello")) glow.classList.add("hello");
 glow.addEventListener("animationend",e=>{ if(e.animationName==="glowPulse") glow.classList.remove("hello","snap"); });
 setTimeout(()=>glow.classList.remove("hello"), 3200); // fallback if animation events never fire
 
@@ -569,7 +585,7 @@ let dragStart=null, dragT0=0;
 function setLoading(on){
   loading=on;
   loadRow.classList.toggle("show",on);
-  glow.classList.toggle("thinking",on);
+  if(!nativeGlow(on ? "think" : "idle")) glow.classList.toggle("thinking",on);
   send.disabled=on;
   scrollEnd();
 }
