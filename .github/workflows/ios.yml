@@ -1,4 +1,5 @@
-# Build recipe: unsigned IPA for AltStore sideloading
+# Build recipe: unsigned IPA of the NATIVE SwiftUI app (Sideloadly signs it).
+# The web/Capacitor pipeline is gone — ios-native/ + xcodegen is the whole story.
 name: iOS build (unsigned IPA for AltStore)
 
 on:
@@ -9,67 +10,32 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Assemble web assets
+      - name: Generate Xcode project
         run: |
-          mkdir -p www
-          cp index.html manifest.json icon-180.png icon-192.png icon-512.png www/
-
-      - name: Install Capacitor
-        run: npm install
-
-      - name: Add iOS platform
-        run: |
-          npx cap add ios
-          npx cap sync ios
-
-      - name: Embed native glow overlay
-        # Vendor ShidokuGlow.swift into a file that is already in the Xcode
-        # project (no pbxproj surgery), then boot our CAPBridgeViewController
-        # subclass from the storyboard. The greps fail the build loudly if the
-        # Capacitor template ever changes shape — never ship without the glow.
-        run: |
-          cat native/ShidokuGlow.swift >> ios/App/App/AppDelegate.swift
-          SB=ios/App/App/Base.lproj/Main.storyboard
-          sed -i '' 's/customClass="CAPBridgeViewController" customModule="Capacitor"/customClass="ShidokuViewController" customModule="App"/' "$SB"
-          grep -q 'customClass="ShidokuViewController"' "$SB"
-          grep -q 'class ShidokuGlowView' ios/App/App/AppDelegate.swift
-
-      - name: Generate icons and splash
-        run: npx @capacitor/assets generate --ios --iconBackgroundColor '#0E1013' --splashBackgroundColor '#000000'
-
-      - name: Patch Info.plist (camera permission, ATS, portrait)
-        run: |
-          P=ios/App/App/Info.plist
-          /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string 'Shidoku shows a live viewfinder and analyzes the photo you capture.'" "$P"
-          /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string 'Shidoku connects to your own relay server on your home Wi-Fi.'" "$P"
-          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" "$P" || true
-          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsArbitraryLoads bool true" "$P" || true
-          /usr/libexec/PlistBuddy -c "Delete :UISupportedInterfaceOrientations" "$P" || true
-          /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations array" "$P"
-          /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations:0 string UIInterfaceOrientationPortrait" "$P"
-          /usr/libexec/PlistBuddy -c "Print" "$P"
+          brew install xcodegen
+          cp assets/icon.png ios-native/Assets.xcassets/AppIcon.appiconset/icon.png
+          cd ios-native
+          xcodegen generate
+          ls -la
 
       - name: Build unsigned app
         run: |
-          cd ios/App
-          ls -la
-          if [ -e App.xcworkspace ]; then TARGET="-workspace App.xcworkspace"; else TARGET="-project App.xcodeproj"; fi
-          xcodebuild $TARGET -scheme App -configuration Release -sdk iphoneos \
+          cd ios-native
+          xcodebuild -project Shidoku.xcodeproj -scheme Shidoku -configuration Release -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
 
       - name: Package IPA
         run: |
-          APP="ios/App/build/Build/Products/Release-iphoneos/App.app"
+          APP="ios-native/build/Build/Products/Release-iphoneos/Shidoku.app"
+          # never ship without the pieces that bit us before
+          plutil -p "$APP/Info.plist" | grep -q NSLocalNetworkUsageDescription
+          plutil -p "$APP/Info.plist" | grep -q NSCameraUsageDescription
           mkdir Payload
           cp -R "$APP" Payload/
           zip -qry Shidoku.ipa Payload

@@ -1,0 +1,40 @@
+# XcodeGen spec — the runner turns this into Shidoku.xcodeproj (nothing
+# Xcode-generated is committed; see .github/workflows/ios.yml).
+name: Shidoku
+options:
+  deploymentTarget:
+    iOS: "26.0"
+targets:
+  Shidoku:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+      - Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pake.shidoku
+        PRODUCT_NAME: Shidoku
+        MARKETING_VERSION: "2.0"
+        CURRENT_PROJECT_VERSION: "12"
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Shidoku
+        UILaunchScreen: {}
+        NSCameraUsageDescription: "Shidoku shows a live viewfinder and analyzes the photo you capture."
+        NSLocalNetworkUsageDescription: "Shidoku connects to your own relay server on your home Wi-Fi."
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIRequiresFullScreen: true
+        ITSAppUsesNonExemptEncryption: false
+schemes:
+  Shidoku:
+    build:
+      targets:
+        Shidoku: all

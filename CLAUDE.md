@@ -5,25 +5,40 @@ Search bottom bar). **Ask** = Claude answer in the sheet. **Search** (v1,
 owner request 2026-07-13) = hand the frame to Google Lens. Do not add
 features unprompted.
 
-DELIVERY (owner's decision 2026-07-09): **native iOS shell via Capacitor**,
-built unsigned on GitHub macOS runners, sideloaded with AltStore (free Apple ID,
-7-day re-sign). See NATIVE.md for the whole pipeline. The Safari/PWA route is
-abandoned as primary (owner: "too many restrictions") but index.html remains a
-working web app and the single source of truth — the shell wraps it verbatim.
+DELIVERY (owner's decision 2026-07-14, superseding the Capacitor shell):
+**fully NATIVE SwiftUI app** in `ios-native/` (iOS 26 minimum — real system
+Liquid Glass via `.glassEffect`), generated with xcodegen and built unsigned
+on GitHub macOS-26 runners, sideloaded with Sideloadly (free Apple ID, 7-day
+re-sign). See NATIVE.md for the pipeline. The web UI (index.html/sim.html)
+and the Capacitor shell are RETIRED — deleted from HEAD 2026-07-14 (owner:
+"clear all the UI, keep only the brain"; they live in git history ≤ 8f3742e).
+There is no browser-testing loop anymore: UI changes are verified on-device
+via build + sideload. The owner's Gemini-sourced repo list was researched
+first: the community glow recipes + `.glassEffect` were adopted; the App
+Intents / IndexedEntity route in that list is for surfacing an app INSIDE
+Apple's own VI (not applicable), and on-device foundation-model wrappers are
+irrelevant (the brain is Claude via the relay).
 
 ## Owner rules (non-negotiable)
 - English only — UI, prompts, responses, comments. Zero Chinese or Japanese characters anywhere.
 - The app must open straight into the live viewfinder: zero taps after launch.
 - Mechanism-first answers, no filler praise (already baked into ASK_PROMPT).
 
-## Empirical invariants (established on-device — do not re-test)
-- claude.ai artifacts cannot use getUserMedia (iframe permissions policy) → PWA on own VPS.
-- Live viewfinder requires HTTPS (secure context); Caddy in front is mandatory.
-- The stream dies when backgrounded: stop on visibilitychange hidden, restart on visible.
-- Fallback when live view is denied: `<input type="file" accept="image/*" capture="environment">`
-  opens the iOS rear camera directly.
-- iPhone HEIC: decode via `<img>` → canvas → JPEG (Safari decodes HEIC natively).
-- `<video>` needs `playsinline muted autoplay`; layout uses viewport-fit=cover + env(safe-area-inset-*).
+## Empirical invariants
+Native era (current):
+- iOS silently kills LAN requests without BOTH NSLocalNetworkUsageDescription
+  in the plist AND the user's Local Network permission (Settings → Privacy &
+  Security → Local Network → Shidoku). Symptom: "Load failed" on every
+  Ask/Search while the app otherwise works. Re-signed sideloads sometimes
+  lose the permission without re-prompting — toggle it, or reboot the phone.
+- The camera session must stop on scenePhase background and restart on
+  active (ported from the web era's visibilitychange rule).
+- Frames are downscaled to 1100 px before upload (vision-token latency —
+  measured; don't raise without re-measuring).
+Web era (historical, index.html ≤ commit 8f3742e — only matters if the web
+app is ever revived): getUserMedia needs HTTPS + iframe permissions;
+`<video>` needs playsinline muted autoplay; HEIC decodes via img→canvas;
+file-input capture=environment is the no-camera fallback.
 
 ## Architecture
 - index.html (whole app, vanilla JS) → same-origin POST /api/claude → server.py
@@ -75,22 +90,24 @@ working web app and the single source of truth — the shell wraps it verbatim.
   and /searchbyimage/upload, and a server-side anonymous upload mints a link
   the logged-in browser refuses ("image not associated with your account");
   all three verified 2026-07-13.
-- **Capture light (native, since build #11)**: the capture/thinking/launch
-  glow renders NATIVELY in the Capacitor shell. native/ShidokuGlow.swift is
-  appended to AppDelegate.swift by ios.yml (no pbxproj surgery) and the
-  storyboard is re-pointed at ShidokuViewController — a CAPBridgeViewController
-  subclass that mounts a Core Animation overlay above the webview and registers
-  the `shidokuGlow` WKScriptMessage channel before the page loads (both greps
-  in the ios.yml step fail the build if the Capacitor template changes shape).
-  index.html posts "bloom" / "think" / "idle" / "hello"; when the channel is
-  absent (web, sim) the CSS #glow takes over unchanged. The light is built
-  from the owner's real Apple VI recording, frame-measured: NOT a border ring —
-  seven very large soft radial masses centered ON the screen border
-  (screen-blended, falloff bleeding ~35% inward), igniting staggered over
-  ~1.1 s on capture, breathing desynchronized while thinking, colors
-  reshuffled every capture. The photo blur/brighten stays CSS in the webview.
-  prefers-reduced-motion suppresses both paths; the overlay's layer clock is
-  paused when idle so the drift loops cost nothing.
+- **Capture light (SETTLED by the owner on build #11 — do not touch
+  unprompted)**: `ios-native/Sources/GlowOverlay.swift`, a verbatim port of
+  the build-#11 winner. Frame-measured from the owner's real Apple VI
+  recording: NOT a border ring — seven very large soft radial CA masses
+  centered ON the screen border (screen-blended, falloff bleeding ~35%
+  inward), igniting staggered over ~1.1 s on capture, breathing
+  desynchronized while thinking, colors reshuffled every capture, layer
+  clock paused when idle. The photo's blur+brighten breath lives in
+  ContentView.runPhotoBloom. Reduce Motion suppresses all of it. The
+  `spots` table is the tuning surface if he ever reopens the subject.
+- **Post-capture UI (native rebuild, build #12+)**: cloned from the owner's
+  recording, measured in `Desktop\shidoku\UI-ANALYSIS.md` — light top card
+  (12.5 pt margins, 22 pt corners, SF ~19 pt near-black, copy glyph,
+  "Claude • Check important info for mistakes." attribution), persistent
+  bottom input capsule ("Ask about details…") + light ✕ disc bottom-right,
+  light "Asking Claude…" pill while waiting, Google results in an in-app
+  SFSafariViewController sheet. Deliberate divergence kept: answers STREAM
+  into the card (ours starts in ~2 s; VI shows nothing for ~15 s).
 - The CLIENT stays vendor-neutral (Anthropic-shaped content blocks in `messages`).
   Changing brains = rewriting server.py's translation only.
 - Brain history: Claude Sonnet 5 API (v1 design) → Gemini via OpenAI-compat
@@ -110,9 +127,10 @@ working web app and the single source of truth — the shell wraps it verbatim.
   verified: with examples stripped, the model still volunteered "Kleenex...
   universally used regardless of brand" from its own knowledge, unsearched.
   Do not re-add brand examples.
-- Config knobs: RELAY, MAX_TOKENS, ASK_PROMPT in index.html; MODEL / PORT /
-  HOST / TLS / PUBLIC_URL / CLAUDE_BIN in server.py (all env- or flag-
-  overridable).
+- Config knobs: RELAY / MAX_TOKENS / ASK_PROMPT now live in
+  `ios-native/Sources/Config.swift` (an IP change = edit + rebuild);
+  MODEL / PORT / HOST / TLS / PUBLIC_URL / CLAUDE_BIN in server.py (all
+  env- or flag-overridable).
 
 ## Deploy
 Local (the owner's PC, current daily driver): double-click

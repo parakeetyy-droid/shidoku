@@ -1,37 +1,36 @@
-//
-//  ShidokuGlow.swift — appended to AppDelegate.swift by ios.yml at build time.
-//
-//  The native side of the capture light. The web app posts one of
-//  "bloom" / "think" / "idle" / "hello" on the `shidokuGlow` script-message
-//  channel and this overlay paints the light natively above the WKWebView.
-//
-//  Geometry and timing come from the owner's real Apple Visual Intelligence
-//  screen recording (reference/frames next to HANDOFF.md): the light is NOT
-//  a uniform border ring — it is a few very large, very soft colored masses
-//  whose centers sit on the screen border, bleeding up to ~35% of the screen
-//  inward, drifting while they live. Ignition ~0.2 s after the tap, peak
-//  ~0.5 s, gone by ~1 s. The webview keeps doing the photo blur/brighten;
-//  this view only does light.
-//
-
+import SwiftUI
 import UIKit
-import WebKit
-import Capacitor
 
-final class ShidokuViewController: CAPBridgeViewController {
-    private let glow = ShidokuGlowView()
+// The capture light — SETTLED by the owner on build #11 (2026-07-14) after
+// eleven iterations; the visual parameters below are a verbatim port of the
+// Capacitor-era native/ShidokuGlow.swift and must not drift. Geometry and
+// timing were measured from the owner's real Apple Visual Intelligence
+// recording: NOT a border ring — a few very large, very soft colored masses
+// whose centers sit on the screen border, bleeding ~35% inward, drifting.
+// Ignition ~0.2 s after the tap, peak ~0.5 s, gone by ~1 s.
 
-    override func capacitorDidLoad() {
-        super.capacitorDidLoad()
-        guard let webView = self.webView else { return }
-        glow.frame = webView.bounds
-        glow.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        webView.addSubview(glow)
-        webView.configuration.userContentController.add(glow, name: "shidokuGlow")
+enum GlowMode: Equatable {
+    case idle
+    case bloom(Int)   // the Int is a capture counter so consecutive blooms re-trigger
+    case think
+    case hello
+}
+
+struct GlowOverlay: UIViewRepresentable {
+    let mode: GlowMode
+
+    func makeUIView(context: Context) -> ShidokuGlowView {
+        let v = ShidokuGlowView()
+        v.isUserInteractionEnabled = false
+        return v
+    }
+
+    func updateUIView(_ uiView: ShidokuGlowView, context: Context) {
+        uiView.apply(mode)
     }
 }
 
-final class ShidokuGlowView: UIView, WKScriptMessageHandler {
+final class ShidokuGlowView: UIView {
 
     // The seven documented Apple Intelligence colors.
     private static let palette: [UIColor] = [
@@ -44,9 +43,6 @@ final class ShidokuGlowView: UIView, WKScriptMessageHandler {
         UIColor(red: 198.0/255.0, green: 134.0/255.0, blue: 255.0/255.0, alpha: 1.0)  // #C686FF
     ]
 
-    // Where the light lives, in unit screen coordinates. Centers sit on or
-    // just past the border so each mass's own radial falloff does all the
-    // feathering — no ring, no mask, matching the recording's frames.
     // (x, y, diameter as a fraction of the short screen side, peak opacity)
     private struct Spot {
         let x: CGFloat
@@ -64,23 +60,10 @@ final class ShidokuGlowView: UIView, WKScriptMessageHandler {
         Spot(x: 1.03, y: 0.90, d: 0.65, a: 0.58)    // bottom-right corner
     ]
 
-    private enum Mode { case idle, bloom, think, hello }
-    private var mode = Mode.idle
+    private var currentMode = GlowMode.idle
     private var blobs: [CAGradientLayer] = []
     private var builtSize = CGSize.zero
     private var pending: DispatchWorkItem?
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        isUserInteractionEnabled = false
-        backgroundColor = .clear
-    }
-
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        isUserInteractionEnabled = false
-        backgroundColor = .clear
-    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -90,29 +73,29 @@ final class ShidokuGlowView: UIView, WKScriptMessageHandler {
         }
     }
 
-    // MARK: - messages from the web app
+    // MARK: - mode changes (same state machine the message channel drove)
 
-    func userContentController(_ userContentController: WKUserContentController,
-                               didReceive message: WKScriptMessage) {
-        guard let cmd = message.body as? String else { return }
+    func apply(_ mode: GlowMode) {
+        guard mode != currentMode else { return }
+        let previous = currentMode
+        currentMode = mode
         pending?.cancel()
         pending = nil
-        switch cmd {
-        case "bloom":
-            mode = .bloom
+        if UIAccessibility.isReduceMotionEnabled { return }
+        switch mode {
+        case .bloom:
             reshuffleColors() // a different light every capture, like the real thing
             resumeClock()
             runEnvelope(values: [0.0, 1.0, 0.85, 0.0], times: [0.0, 0.18, 0.52, 1.0],
                         duration: 1.1, maxStagger: 0.12)
             scheduleIdle(after: 1.4)
-        case "hello":
-            mode = .hello
+        case .hello:
             resumeClock()
             runEnvelope(values: [0.0, 0.7, 0.45, 0.0], times: [0.0, 0.22, 0.55, 1.0],
                         duration: 2.4, maxStagger: 0.25)
             scheduleIdle(after: 2.9)
-        case "think":
-            if mode == .bloom {
+        case .think:
+            if case .bloom = previous {
                 // let the capture light finish before the breathing starts
                 let w = DispatchWorkItem { [weak self] in self?.startThink() }
                 pending = w
@@ -120,15 +103,13 @@ final class ShidokuGlowView: UIView, WKScriptMessageHandler {
             } else {
                 startThink()
             }
-        default:
+        case .idle:
             goIdle()
         }
     }
 
-    // MARK: - modes
-
     private func startThink() {
-        mode = .think
+        currentMode = .think
         resumeClock()
         for (i, b) in blobs.enumerated() {
             let base = ShidokuGlowView.spots[i % ShidokuGlowView.spots.count].a
@@ -145,7 +126,6 @@ final class ShidokuGlowView: UIView, WKScriptMessageHandler {
     }
 
     private func goIdle() {
-        mode = .idle
         for b in blobs { b.removeAnimation(forKey: "env") }
         pauseClock()
     }
@@ -153,14 +133,17 @@ final class ShidokuGlowView: UIView, WKScriptMessageHandler {
     private func scheduleIdle(after s: TimeInterval) {
         let w = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
-            if self.mode == .bloom || self.mode == .hello { self.goIdle() }
+            switch self.currentMode {
+            case .bloom, .hello: self.goIdle()
+            default: break
+            }
         }
         pending = w
         DispatchQueue.main.asyncAfter(deadline: .now() + s, execute: w)
     }
 
-    // One capture/greeting envelope per blob, slightly staggered so the
-    // masses ignite unevenly the way the recording does.
+    // One envelope per blob, slightly staggered so the masses ignite
+    // unevenly the way the recording does.
     private func runEnvelope(values: [Float], times: [NSNumber],
                              duration: CFTimeInterval, maxStagger: CFTimeInterval) {
         let now = layer.convertTime(CACurrentMediaTime(), from: nil)
@@ -205,7 +188,7 @@ final class ShidokuGlowView: UIView, WKScriptMessageHandler {
             blobs.append(g)
             addDrift(to: g, side: side)
         }
-        if mode == .idle { pauseClock() }
+        if currentMode == .idle { pauseClock() }
     }
 
     private func addDrift(to g: CAGradientLayer, side: CGFloat) {
