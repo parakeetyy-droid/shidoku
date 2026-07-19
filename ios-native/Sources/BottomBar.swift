@@ -55,20 +55,17 @@ struct ShutterButton: View {
     var body: some View {
         Button(action: action) {
             ZStack {
-                // the ring: colored light leaking from behind the core's edge —
-                // peak brightness AT the rim, gone within ~8 pt; one hue at a
-                // time, drifting (owner rule; Apple's own ring shifts over time)
+                // A THIN ring hugging the core with a dark gap between them —
+                // the owner-settled anatomy, and what the reference frames
+                // show. The first simulator shot proved the old radial-glow
+                // version read as one soft halo with no ring and no gap.
+                // One hue at a time, drifting (Apple's own ring shifts too).
                 Circle()
-                    .fill(RadialGradient(
-                        gradient: Gradient(stops: [
-                            .init(color: .clear, location: 0.70),
-                            .init(color: Color(hue: 0.628, saturation: 0.50, brightness: 0.96).opacity(0.55), location: 0.79),
-                            .init(color: Color(hue: 0.628, saturation: 0.50, brightness: 0.96).opacity(0.18), location: 0.90),
-                            .init(color: .clear, location: 1.0)
-                        ]),
-                        center: .center, startRadius: 0, endRadius: 43))
-                    .frame(width: 86, height: 86)
-                    .blur(radius: 2)
+                    .strokeBorder(Color(hue: 0.628, saturation: 0.46, brightness: 0.97).opacity(0.95),
+                                  lineWidth: 2)
+                    .frame(width: 78, height: 78)
+                    .shadow(color: Color(hue: 0.628, saturation: 0.46, brightness: 0.97).opacity(0.45),
+                            radius: 5)
                     .hueRotation(.degrees(hueAngle))
                 // flat pale core with a soft top-left light
                 Circle()
@@ -78,7 +75,7 @@ struct ShutterButton: View {
                             Color(red: 218.0/255.0, green: 215.0/255.0, blue: 211.0/255.0)
                         ]),
                         center: UnitPoint(x: 0.35, y: 0.28), startRadius: 0, endRadius: 46))
-                    .frame(width: 66, height: 66)
+                    .frame(width: 64, height: 64)
                     .shadow(color: .black.opacity(0.25), radius: 3, x: 0, y: 1)
             }
             .frame(width: 78, height: 78)

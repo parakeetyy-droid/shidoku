@@ -127,6 +127,8 @@ struct AnswerCard: View {
                 }
             }
         }
+        .padding(.trailing, 24)   // the copy glyph sits top-right; without this
+                                  // the first line runs underneath it
         .textSelection(.enabled)
     }
 
