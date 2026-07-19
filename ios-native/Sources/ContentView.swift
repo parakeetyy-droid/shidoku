@@ -62,7 +62,19 @@ struct ContentView: View {
             Color.black.ignoresSafeArea()
 
             if phase == .live {
-                CameraPreview(session: camera.session).ignoresSafeArea()
+                if let stand = previewPhoto {
+                    // simulator screenshot run — no camera exists there
+                    GeometryReader { geo in
+                        Image(uiImage: stand)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .clipped()
+                    }
+                    .ignoresSafeArea()
+                } else {
+                    CameraPreview(session: camera.session).ignoresSafeArea()
+                }
             }
 
             if let img = frozenImage {
@@ -121,6 +133,7 @@ struct ContentView: View {
                 .presentationCornerRadius(23)
         }
         .onAppear {
+            if PreviewMode.active { setUpPreview(); return }
             camera.start()
             glow = .hello
         }
@@ -181,6 +194,32 @@ struct ContentView: View {
             .glassEffect(.regular.interactive())
         }
         .padding(.horizontal, 44)
+    }
+
+    // MARK: - preview harness (simulator screenshots only)
+
+    private var previewPhoto: UIImage? {
+        PreviewMode.active ? PreviewMode.photo : nil
+    }
+
+    private func setUpPreview() {
+        let photo = PreviewMode.photo
+        switch PreviewMode.state {
+        case "capture":
+            frozenImage = photo; phase = .frozen
+            bloomCount += 1; glow = .bloom(bloomCount)
+            frozenBlur = 9; frozenBright = 0.16      // pinned at the bloom's peak
+        case "asking":
+            frozenImage = photo; phase = .frozen
+            loading = true; glow = .think
+        case "answer":
+            frozenImage = photo; phase = .frozen
+            thread = [ChatItem(role: .assistant, text: PreviewMode.cannedAnswer)]
+        case "bare":
+            frozenImage = photo; phase = .frozen
+        default:
+            phase = .live; glow = .idle
+        }
     }
 
     // MARK: - capture flow

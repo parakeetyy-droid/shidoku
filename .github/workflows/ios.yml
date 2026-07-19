@@ -46,3 +46,47 @@ jobs:
           name: Shidoku-ipa
           path: Shidoku.ipa
           retention-days: 30
+
+      # Real screenshots of the real app. Nobody on this project has a Mac,
+      # simulator or device, so without this every UI change is written blind
+      # and only judged after a sideload. Boot a 390x844 simulator, force each
+      # UI state via -shidokuPreview, and upload the PNGs.
+      - name: Screenshot every UI state
+        continue-on-error: true
+        run: |
+          set -x
+          cd ios-native
+          xcodebuild -project Shidoku.xcodeproj -scheme Shidoku -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath simbuild \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+          APP="simbuild/Build/Products/Debug-iphonesimulator/Shidoku.app"
+
+          # a 390x844 device, same logical geometry as his iPhone 16e
+          DEV=$(xcrun simctl list devicetypes | grep -oE 'iPhone (16e|14|13)' | head -1)
+          echo "device: $DEV"
+          UDID=$(xcrun simctl create shidoku-shot \
+            "com.apple.CoreSimulator.SimDeviceType.$(echo "$DEV" | tr ' ' '-')" || true)
+          if [ -z "$UDID" ]; then
+            UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];print([x['udid'] for v in d.values() for x in v if '390' or True][0])")
+          fi
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b || true
+          xcrun simctl install "$UDID" "$APP"
+
+          mkdir -p ../shots
+          for S in live capture asking answer bare; do
+            xcrun simctl terminate "$UDID" com.pake.shidoku || true
+            xcrun simctl launch "$UDID" com.pake.shidoku -shidokuPreview -shidokuState "$S"
+            sleep 4
+            xcrun simctl io "$UDID" screenshot "../shots/$S.png" || true
+          done
+          xcrun simctl shutdown "$UDID" || true
+          ls -la ../shots
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Shidoku-screenshots
+          path: shots/*.png
+          retention-days: 30
