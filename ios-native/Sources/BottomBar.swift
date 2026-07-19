@@ -30,6 +30,11 @@ struct SideButton: View {
                 }
                 .frame(width: 48, height: 48)
                 .glassEffect(.regular.tint(discTint).interactive(), in: .circle)
+                // Glass adapts to what is behind it, so over a dark scene the
+                // discs faded almost to nothing (seen in the first simulator
+                // shots). Real VI's discs are a CONSTANT dark scrim, visible
+                // on any subject — this base guarantees that under the glass.
+                .background(Circle().fill(Color.black.opacity(0.30)))
                 Text(label)
                     .font(.system(size: 15))
                     .foregroundStyle(.white)
@@ -106,6 +111,7 @@ struct CloseDisc: View {
                 .shadow(color: .black.opacity(0.35), radius: 2, x: 0, y: 1)
                 .frame(width: 72, height: 72)
                 .glassEffect(.regular.tint(discTint).interactive(), in: .circle)
+                .background(Circle().fill(Color.black.opacity(0.30)))
         }
         .buttonStyle(PressScaleStyle(scale: 0.95))
     }

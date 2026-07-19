@@ -52,8 +52,11 @@ struct LightSurface: ViewModifier {
                     .fill(.regularMaterial)
                     .overlay {
                         RoundedRectangle(cornerRadius: radius, style: .continuous)
+                            // 0.30 was too little: the first simulator shots
+                            // showed a GRAY card with the dark photo reading
+                            // straight through it, not VI's light warm card.
                             .fill(Color(red: 252.0/255.0, green: 249.0/255.0, blue: 247.0/255.0)
-                                .opacity(0.30))   // tuning knob for card warmth
+                                .opacity(0.58))
                     }
             }
             .environment(\.colorScheme, .light)

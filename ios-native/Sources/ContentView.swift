@@ -37,6 +37,7 @@ struct ContentView: View {
     // Bumped whenever the conversation is reset (capture / dismiss / unfreeze)
     // so a stream still in flight can never write into a newer capture.
     @State private var generation = 0
+    @State private var controlsHidden = false
 
     // The pill and the card are ONE object: frame analysis showed the pill
     // expanding in place into the card (~0.33 s, blur-to-sharp, no crossfade
@@ -121,7 +122,14 @@ struct ContentView: View {
                 .transition(.opacity)
             }
         }
-        .safeAreaInset(edge: .bottom) { bottomControls }
+        .safeAreaInset(edge: .bottom) {
+            // VI fades the bar OUT while the capture light blooms, then fades
+            // the post-capture controls in about 0.4 s after it settles. The
+            // first build snapped straight from one bar to the other.
+            bottomControls
+                .opacity(controlsHidden ? 0 : 1)
+                .animation(.easeInOut(duration: 0.28), value: controlsHidden)
+        }
         .sheet(item: $lensItem) { item in
             // VI's Google sheet is draggable between a full detent (top ≈54 pt,
             // ~93% of the screen) and a low peek (top ≈743 pt, ~12%), both
@@ -256,6 +264,13 @@ struct ContentView: View {
         bloomCount += 1
         glow = .bloom(bloomCount)
         runPhotoBloom()
+        if !UIAccessibility.isReduceMotionEnabled {
+            controlsHidden = true
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_050_000_000)   // the light settles
+                controlsHidden = false
+            }
+        }
         return true
     }
 
@@ -278,6 +293,7 @@ struct ContentView: View {
 
     private func unfreeze() {
         generation += 1
+        controlsHidden = false
         phase = .live
         frozenImage = nil
         frozenB64 = nil

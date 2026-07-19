@@ -73,6 +73,8 @@ jobs:
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b || true
           xcrun simctl install "$UDID" "$APP"
+          # otherwise the camera permission alert sits over every screenshot
+          xcrun simctl privacy "$UDID" grant camera com.pake.shidoku || true
 
           mkdir -p ../shots
           for S in live capture asking answer bare; do
