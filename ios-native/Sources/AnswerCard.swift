@@ -70,7 +70,8 @@ struct AnswerCard: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(alignment: .topTrailing) { copyButton }
         .environment(\.colorScheme, .light)
-        .scaleEffect(appeared ? 1.0 : 0.92)
+        // no scaleEffect here — the pill→card matchedGeometryEffect already
+        // drives the size change; the blur-to-sharp is what the frames show
         .opacity(appeared ? 1.0 : 0.0)
         .blur(radius: appeared ? 0 : 6)
         .onAppear {

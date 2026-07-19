@@ -34,6 +34,15 @@ struct ContentView: View {
     @State private var lensItem: LensItem?
     @State private var toastText: String?
 
+    // Bumped whenever the conversation is reset (capture / dismiss / unfreeze)
+    // so a stream still in flight can never write into a newer capture.
+    @State private var generation = 0
+
+    // The pill and the card are ONE object: frame analysis showed the pill
+    // expanding in place into the card (~0.33 s, blur-to-sharp, no crossfade
+    // and no gap). This namespace carries that geometry across the swap.
+    @Namespace private var answerNS
+
     @Environment(\.scenePhase) private var scenePhase
 
     private var showCard: Bool {
@@ -41,6 +50,11 @@ struct ContentView: View {
     }
     private var showPill: Bool {
         loading && !showCard
+    }
+    /// A question is in play — the flow shows the input capsule + light ✕.
+    /// Frozen WITHOUT one is the bare state: the Ask / ✕ / Search bar.
+    private var askStarted: Bool {
+        loading || !thread.isEmpty
     }
 
     var body: some View {
@@ -75,15 +89,17 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 if showCard {
                     AnswerCard(thread: thread, loading: loading, onCopyAll: copyText)
+                        .matchedGeometryEffect(id: "answerSurface", in: answerNS)
                         .padding(.horizontal, 12.5)
                         .padding(.top, 6)
                 } else if showPill {
                     AskingPill(text: "Asking Claude\u{2026}")
+                        .matchedGeometryEffect(id: "answerSurface", in: answerNS)
                         .padding(.top, 8)
-                        .transition(.opacity)
                 }
                 Spacer(minLength: 0)
             }
+            .animation(.smooth(duration: 0.34), value: showCard)
 
             if let toast = toastText {
                 VStack {
@@ -95,7 +111,14 @@ struct ContentView: View {
         }
         .safeAreaInset(edge: .bottom) { bottomControls }
         .sheet(item: $lensItem) { item in
-            SafariSheet(url: item.url).ignoresSafeArea()
+            // VI's Google sheet is draggable between a full detent (top ≈54 pt,
+            // ~93% of the screen) and a low peek (top ≈743 pt, ~12%), both
+            // measured from the recording.
+            SafariSheet(url: item.url)
+                .ignoresSafeArea()
+                .presentationDetents([.large, .fraction(0.14)])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(23)
         }
         .onAppear {
             camera.start()
@@ -118,8 +141,14 @@ struct ContentView: View {
             if camera.denied {
                 Color.clear.frame(height: 1)
             } else {
-                BottomBar(onAsk: askTapped, onShutter: shutterTapped, onSearch: searchTapped)
+                BottomBar(centre: .shutter,
+                          onAsk: askTapped, onCentre: shutterTapped, onSearch: searchTapped)
             }
+        } else if !askStarted {
+            // BARE FROZEN — the third bar mode, measured from the recording:
+            // photo held, Ask / ✕ / Search. Ask starts the flow, ✕ goes live.
+            BottomBar(centre: .close,
+                      onAsk: { firstAsk(extra: nil) }, onCentre: unfreeze, onSearch: openLens)
         } else {
             VStack(spacing: 6) {
                 if let err = errorText {
@@ -128,7 +157,7 @@ struct ContentView: View {
                 InputCapsuleRow(text: $inputText,
                                 loading: loading,
                                 onSend: sendFollowUp,
-                                onClose: unfreeze)
+                                onClose: dismissAnswer)
             }
         }
     }
@@ -175,6 +204,7 @@ struct ContentView: View {
         guard phase == .live, !camera.denied else { return false }
         guard let img = camera.grabFrame(),
               let b64 = RelayClient.jpegBase64(from: img) else { return false }
+        generation += 1
         frozenImage = img
         frozenB64 = b64
         phase = .frozen
@@ -190,7 +220,25 @@ struct ContentView: View {
         return true
     }
 
+    /// The measured dismissal cascade: the flow ✕ clears the card, capsule and
+    /// ✕ together (~5 frames) and lands on the BARE frozen photo — it does NOT
+    /// return to the camera. Only the centre ✕ there goes live again, and the
+    /// card never comes back.
+    private func dismissAnswer() {
+        generation += 1
+        withAnimation(.easeOut(duration: 0.2)) {
+            thread = []
+        }
+        messagesJSON = []
+        errorText = nil
+        pendingRetry = nil
+        inputText = ""
+        loading = false
+        glow = .idle
+    }
+
     private func unfreeze() {
+        generation += 1
         phase = .live
         frozenImage = nil
         frozenB64 = nil
@@ -275,15 +323,21 @@ struct ContentView: View {
         errorText = nil
         pendingRetry = nil
         glow = .think
+        let gen = generation
         Task { @MainActor in
             do {
                 let result = try await RelayClient.stream(messages: messages) { accumulated in
+                    guard gen == generation else { return }
                     updateLastAssistant(text: accumulated)
                 }
+                // the capture was dismissed or replaced while this was in
+                // flight — drop it rather than writing into a newer thread
+                guard gen == generation else { return }
                 updateLastAssistant(text: result.text, sources: result.sources)
                 if let soft = result.softError { errorText = soft }
                 onDone(result)
             } catch {
+                guard gen == generation else { return }
                 errorText = error.localizedDescription
                 onFail()
             }

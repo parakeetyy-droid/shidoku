@@ -88,39 +88,71 @@ struct ShutterButton: View {
     }
 }
 
+// The centre control has two faces. Frame analysis of the real recording
+// (2026-07-16) found a THIRD bar mode the old spec missed: with the photo
+// frozen and no question asked, VI shows Ask / ✕ / Search — same side discs,
+// the shutter replaced by a dark ✕ disc (~72 pt, between the 48 pt discs and
+// the 78 pt shutter in size).
+enum BarCentre { case shutter, close }
+
+struct CloseDisc: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 28, weight: .light))
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.35), radius: 2, x: 0, y: 1)
+                .frame(width: 72, height: 72)
+                .glassEffect(.regular.tint(discTint).interactive(), in: .circle)
+        }
+        .buttonStyle(PressScaleStyle(scale: 0.95))
+    }
+}
+
 struct BottomBar: View {
+    var centre: BarCentre = .shutter
     let onAsk: () -> Void
-    let onShutter: () -> Void
+    let onCentre: () -> Void
     let onSearch: () -> Void
 
     var body: some View {
-        HStack(alignment: .center) {
-            SideButton(label: "Ask", action: onAsk) {
-                AnyView(
-                    Image(systemName: "text.bubble.fill")
-                        .font(.system(size: 20))
-                        .foregroundStyle(.white)
+        // ONE container for the whole bar: Liquid Glass cannot sample other
+        // glass, so discs in separate containers render inconsistently
+        // (WWDC25 session 323 / "Applying Liquid Glass to custom views").
+        GlassEffectContainer(spacing: 20) {
+            HStack(alignment: .center) {
+                SideButton(label: "Ask", action: onAsk) {
+                    AnyView(
+                        Image(systemName: "text.bubble.fill")
+                            .font(.system(size: 20))
+                            .foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
+                    )
+                }
+                Spacer()
+                if centre == .close {
+                    CloseDisc(action: onCentre)
+                } else {
+                    ShutterButton(action: onCentre)
+                }
+                Spacer()
+                SideButton(label: "Search", action: onSearch) {
+                    AnyView(
+                        ZStack(alignment: .bottomTrailing) {
+                            Image(systemName: "photo.fill")
+                                .font(.system(size: 18))
+                                .foregroundStyle(.white)
+                                .offset(x: -2, y: -2)
+                            Image(systemName: "magnifyingglass.circle.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.white)
+                                .offset(x: 4, y: 4)
+                        }
                         .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
-                )
-            }
-            Spacer()
-            ShutterButton(action: onShutter)
-                .padding(.top, 0)
-            Spacer()
-            SideButton(label: "Search", action: onSearch) {
-                AnyView(
-                    ZStack(alignment: .bottomTrailing) {
-                        Image(systemName: "photo.fill")
-                            .font(.system(size: 18))
-                            .foregroundStyle(.white)
-                            .offset(x: -2, y: -2)
-                        Image(systemName: "magnifyingglass.circle.fill")
-                            .font(.system(size: 14))
-                            .foregroundStyle(.white)
-                            .offset(x: 4, y: 4)
-                    }
-                    .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
-                )
+                    )
+                }
             }
         }
         .padding(.horizontal, 56)
