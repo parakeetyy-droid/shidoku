@@ -14,48 +14,49 @@ struct InputCapsuleRow: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: VI.capsuleSideMargin) {
             HStack(spacing: 10) {
-                Image(systemName: "sparkle")
-                    .font(.system(size: 19))
-                    .foregroundStyle(Color.black.opacity(0.8))
+                ClaudeMark(color: .black)
+                    .frame(width: VI.markSize, height: VI.markSize)
                 TextField("Ask about details\u{2026}", text: $text)
                     .font(.system(size: 17))
-                    .foregroundStyle(Color.black.opacity(0.85))
+                    .foregroundStyle(VI.ink)
                     .tint(Color.black.opacity(0.6))
                     .submitLabel(.send)
                     .focused($focused)
                     .onSubmit { if !loading { onSend() } }
                     .disabled(loading)
             }
-            .padding(.horizontal, 16)
-            .frame(height: 50)
-            .glassEffect()
+            .padding(.leading, 8)
+            .padding(.trailing, 16)
+            .frame(height: VI.capsuleHeight)
+            .lightSurface(radius: VI.capsuleHeight / 2)
+
             Button(action: onClose) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 19, weight: .medium))
-                    .foregroundStyle(Color.black.opacity(0.8))
-                    .frame(width: 44, height: 44)
+                    .font(.system(size: 17, weight: .regular))
+                    .foregroundStyle(.black)
+                    .frame(width: VI.closeDiscSize, height: VI.closeDiscSize)
+                    .lightSurface(radius: VI.closeDiscSize / 2)
             }
             .buttonStyle(PressScaleStyle())
-            .glassEffect(.regular.interactive(), in: .circle)
         }
-        .environment(\.colorScheme, .light)
-        .padding(.horizontal, 11)
-        .padding(.bottom, 6)
+        .padding(.horizontal, VI.capsuleSideMargin)
+        .padding(.bottom, VI.rowBottomInset)
     }
 }
 
+// The pill wears the SAME surface as the card because they are one object —
+// it expands in place into the card (frame-verified), so any difference in
+// material would show as a flicker mid-morph.
 struct AskingPill: View {
     let text: String
     var body: some View {
         Text(text)
-            .font(.system(size: 17, weight: .medium))
-            .foregroundStyle(Color(red: 0.28, green: 0.28, blue: 0.30))
-            .padding(.horizontal, 20)
-            .padding(.vertical, 9)
-            .glassEffect()
-            .environment(\.colorScheme, .light)
+            .font(.system(size: VI.pillTextSize))
+            .foregroundStyle(VI.pillInk)
+            .frame(width: VI.pillWidth, height: VI.pillHeight)
+            .lightSurface(radius: VI.pillRadius)
     }
 }
 

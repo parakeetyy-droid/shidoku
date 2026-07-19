@@ -155,7 +155,7 @@ struct BottomBar: View {
                 }
             }
         }
-        .padding(.horizontal, 56)
+        .padding(.horizontal, 59)   // puts the disc centres at x 83 / 195 / 308
         .padding(.top, 26)
         .padding(.bottom, 24)
     }

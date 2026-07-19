@@ -22,8 +22,8 @@ private struct CardContentHeightKey: PreferenceKey {
     }
 }
 
-private let inkColor = Color.black.opacity(0.85)
-private let claudeBrand = Color(red: 217.0/255.0, green: 119.0/255.0, blue: 87.0/255.0)
+private let inkColor = VI.ink
+private let claudeBrand = VI.brand
 
 struct AnswerCard: View {
     let thread: [ChatItem]
@@ -53,7 +53,7 @@ struct AnswerCard: View {
                     attribution
                     Color.clear.frame(height: 1).id("cardEnd")
                 }
-                .padding(20)
+                .padding(VI.cardPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     GeometryReader { g in
@@ -67,9 +67,8 @@ struct AnswerCard: View {
             }
         }
         .frame(height: min(max(contentHeight, 60), maxCardHeight))
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .lightSurface(radius: VI.cardRadius)
         .overlay(alignment: .topTrailing) { copyButton }
-        .environment(\.colorScheme, .light)
         // no scaleEffect here — the pill→card matchedGeometryEffect already
         // drives the size change; the blur-to-sharp is what the frames show
         .opacity(appeared ? 1.0 : 0.0)
@@ -122,8 +121,8 @@ struct AnswerCard: View {
                     .foregroundStyle(inkColor)
                 case .paragraph(let s):
                     Text(Markdown.inline(s))
-                        .font(.system(size: 19))
-                        .lineSpacing(5)
+                        .font(.system(size: VI.cardTextSize))
+                        .lineSpacing(3)          // 19 pt SF + 3 ≈ the measured 26 pt line height
                         .foregroundStyle(inkColor)
                 }
             }
@@ -165,11 +164,18 @@ struct AnswerCard: View {
         .padding(.top, 2)
     }
 
+    // logo + name in the provider's own colour + the caveat — VI's own shape,
+    // with Claude where it says ChatGPT. Wraps to a second line, as measured.
     private var attribution: some View {
-        (Text("Claude").font(.system(size: 17, weight: .semibold)).foregroundColor(claudeBrand)
-         + Text(" \u{2022} Check important info for mistakes.")
-            .font(.system(size: 15))
-            .foregroundColor(Color.black.opacity(0.4)))
-            .padding(.top, 8)
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            ClaudeMark(color: claudeBrand)
+                .frame(width: 17, height: 17)
+                .alignmentGuide(VerticalAlignment.firstTextBaseline) { _ in 14 }
+            (Text("Claude").font(.system(size: 17, weight: .semibold)).foregroundColor(claudeBrand)
+             + Text(" \u{2022} Check important info for mistakes.")
+                .font(.system(size: 17))
+                .foregroundColor(Color.black.opacity(0.42)))
+        }
+        .padding(.top, 8)
     }
 }
