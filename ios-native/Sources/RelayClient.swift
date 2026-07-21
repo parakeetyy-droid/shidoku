@@ -64,7 +64,11 @@ enum RelayClient {
         guard let url = URL(string: base + "/") else { return false }
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
-        req.timeoutInterval = 2
+        // 3 s, not 2: PARAKEET.local resolves in ~2.3 s on this LAN (measured),
+        // so a 2 s probe would always time out and hand the win to the drifty
+        // IP. This lets the stable mDNS name win when it is up. Off the critical
+        // path anyway (warmUp runs at launch).
+        req.timeoutInterval = 3
         req.cachePolicy = .reloadIgnoringLocalCacheData
         do {
             let (_, resp) = try await URLSession.shared.data(for: req)
