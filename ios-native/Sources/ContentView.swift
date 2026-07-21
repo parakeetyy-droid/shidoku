@@ -38,6 +38,10 @@ struct ContentView: View {
     // so a stream still in flight can never write into a newer capture.
     @State private var generation = 0
     @State private var controlsHidden = false
+    // True through the dismissal cascade (card + capsule fade out, an empty
+    // beat, then the bare bar fades in). Drives the opacity of both the card
+    // and the bottom row so the three beats read the way the recording does.
+    @State private var dismissing = false
 
     // The pill and the card are ONE object: frame analysis showed the pill
     // expanding in place into the card (~0.33 s, blur-to-sharp, no crossfade
@@ -91,7 +95,7 @@ struct ContentView: View {
                 .ignoresSafeArea()
             }
 
-            GlowOverlay(mode: glow)
+            GlowOverlay(mode: glow, pinPeak: previewPinGlow)
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
 
@@ -104,15 +108,23 @@ struct ContentView: View {
                     AnswerCard(thread: thread, loading: loading, onCopyAll: copyText)
                         .matchedGeometryEffect(id: "answerSurface", in: answerNS)
                         .padding(.horizontal, 12.5)
-                        .padding(.top, 6)
+                        .padding(.top, 50)          // card top edge = 50 pt (measured)
+                        .opacity(dismissing ? 0 : 1)
                 } else if showPill {
                     AskingPill(text: "Asking Claude\u{2026}")
                         .matchedGeometryEffect(id: "answerSurface", in: answerNS)
-                        .padding(.top, 8)
+                        .padding(.top, 48)          // pill top edge = 48 pt (measured)
+                        // fade the pill IN (real VI ~0.27 s); on removal stay
+                        // .identity so the pill→card morph is untouched
+                        .transition(.asymmetric(insertion: .opacity, removal: .identity))
                 }
                 Spacer(minLength: 0)
             }
-            .animation(.smooth(duration: 0.34), value: showCard)
+            // pin to the physical screen top: the 47 pt safe area was pushing
+            // the pill to ~55 and the card to ~53; the spec is 48 / 50
+            .ignoresSafeArea(.container, edges: .top)
+            .animation(.smooth(duration: 0.34), value: showCard)   // pill→card morph (keep)
+            .animation(.easeOut(duration: 0.27), value: showPill)  // pill fade-in (F2)
 
             if let toast = toastText {
                 VStack {
@@ -127,7 +139,11 @@ struct ContentView: View {
             // the post-capture controls in about 0.4 s after it settles. The
             // first build snapped straight from one bar to the other.
             bottomControls
-                .opacity(controlsHidden ? 0 : 1)
+                // controlsHidden: the capture-bloom hide. dismissing: the
+                // cascade fade (its 0.2 s-out / 0.34 s-in timing comes from the
+                // withAnimation calls in dismissAnswer, not from here).
+                .opacity((controlsHidden || dismissing) ? 0 : 1)
+                .allowsHitTesting(!dismissing)
                 .animation(.easeInOut(duration: 0.28), value: controlsHidden)
         }
         .sheet(item: $lensItem) { item in
@@ -141,7 +157,10 @@ struct ContentView: View {
                 .presentationCornerRadius(23)
         }
         .onAppear {
-            if PreviewMode.active { setUpPreview(); return }
+            if PreviewMode.active {
+                if PreviewMode.sequence { runSequence() } else { setUpPreview() }
+                return
+            }
             camera.start()
             glow = .hello
         }
@@ -210,6 +229,12 @@ struct ContentView: View {
         PreviewMode.active ? PreviewMode.photo : nil
     }
 
+    /// Freeze the glow at its ignite peak for the STILL capture screenshot
+    /// only — never during the live sequence (which wants the real animation).
+    private var previewPinGlow: Bool {
+        PreviewMode.active && !PreviewMode.sequence && PreviewMode.state == "capture"
+    }
+
     private func setUpPreview() {
         let photo = PreviewMode.photo
         switch PreviewMode.state {
@@ -217,6 +242,7 @@ struct ContentView: View {
             frozenImage = photo; phase = .frozen
             bloomCount += 1; glow = .bloom(bloomCount)
             frozenBlur = 9; frozenBright = 0.16      // pinned at the bloom's peak
+            controlsHidden = true                    // on-device the bar is hidden during the bloom
         case "asking":
             frozenImage = photo; phase = .frozen
             loading = true; glow = .think
@@ -228,6 +254,71 @@ struct ContentView: View {
         default:
             phase = .live; glow = .idle
         }
+    }
+
+    // MARK: - preview motion sequence (CI video only)
+
+    /// Drives the REAL state machine through the whole ask flow on a scripted
+    /// timeline with a FAKE local stream — no network is ever touched. Runs
+    /// only under `-shidokuPreview -shidokuSequence`; see PreviewMode.
+    private func runSequence() {
+        guard let photo = PreviewMode.photo else { return }
+        phase = .live
+        glow = .idle
+        Task { @MainActor in
+            // t≈1.0 s — the Ask tap. beginFrozen runs the SAME freeze path as a
+            // live capture (photo bloom, glow .bloom, controls-hidden dance);
+            // the bundled still stands in for the camera frame.
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            beginFrozen(image: photo, b64: "preview")
+            thread.append(ChatItem(role: .assistant, text: ""))   // as firstAsk does
+            loading = true                                         // the pill fades in
+
+            // hold ~1 s so glow .bloom actually RENDERS (the apply(.bloom)
+            // ignite) before switching to .think — set back-to-back in one
+            // synchronous block the two @State writes coalesce into a single
+            // render and the ignite is skipped, exactly the kind of motion this
+            // video exists to catch.
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            glow = .think                                          // the glow breathes
+
+            // ~0.5 s later (≈+1.5 s after the Ask tap) — the fake stream. Same
+            // updateLastAssistant path as the relay; the first chunk flips
+            // showCard and triggers the pill→card morph.
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            var acc = ""
+            for piece in Self.chunk(PreviewMode.cannedAnswer, into: 10) {
+                acc += piece
+                updateLastAssistant(text: acc)
+                try? await Task.sleep(nanoseconds: 60_000_000)     // ~60 ms / chunk
+            }
+            loading = false
+            glow = .idle
+
+            // hold ~2 s on the finished card, then the measured dismissal cascade
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            dismissAnswer()
+
+            // hold ~1 s on the bare frozen photo (the cascade lands there), then
+            // back to the live viewfinder
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            unfreeze()
+        }
+    }
+
+    /// Split a string into roughly `n` contiguous chunks for the fake stream.
+    private static func chunk(_ s: String, into n: Int) -> [String] {
+        guard n > 1, s.count > n else { return [s] }
+        let chars = Array(s)
+        let size = Int((Double(chars.count) / Double(n)).rounded(.up))
+        var out: [String] = []
+        var i = 0
+        while i < chars.count {
+            let end = min(i + size, chars.count)
+            out.append(String(chars[i..<end]))
+            i = end
+        }
+        return out
     }
 
     // MARK: - capture flow
@@ -251,16 +342,26 @@ struct ContentView: View {
         guard phase == .live, !camera.denied else { return false }
         guard let img = camera.grabFrame(),
               let b64 = RelayClient.jpegBase64(from: img) else { return false }
+        camera.stop()
+        beginFrozen(image: img, b64: b64)
+        return true
+    }
+
+    /// The shared freeze transition — the bloom, the glow, the reset and the
+    /// controls-hidden dance. Live capture supplies the camera frame; the
+    /// preview sequence supplies the bundled still (the simulator has no
+    /// camera). Same animation code either way.
+    private func beginFrozen(image: UIImage, b64: String) {
         generation += 1
-        frozenImage = img
+        frozenImage = image
         frozenB64 = b64
         phase = .frozen
-        camera.stop()
         thread = []
         messagesJSON = []
         errorText = nil
         pendingRetry = nil
         inputText = ""
+        dismissing = false
         bloomCount += 1
         glow = .bloom(bloomCount)
         runPhotoBloom()
@@ -271,7 +372,6 @@ struct ContentView: View {
                 controlsHidden = false
             }
         }
-        return true
     }
 
     /// The measured dismissal cascade: the flow ✕ clears the card, capsule and
@@ -280,20 +380,32 @@ struct ContentView: View {
     /// card never comes back.
     private func dismissAnswer() {
         generation += 1
-        withAnimation(.easeOut(duration: 0.2)) {
+        // Beat 1 (~0.2 s): the card, the input capsule and the light ✕ fade out
+        // TOGETHER. The data stays mounted so the capsule branch holds — without
+        // this the bottom snapped straight to the bare bar. `dismissing` drives
+        // the opacity of both the card and the bottom row.
+        withAnimation(.easeOut(duration: 0.2)) { dismissing = true }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            // now tear the flow down — everything above is already invisible
             thread = []
+            messagesJSON = []
+            errorText = nil
+            pendingRetry = nil
+            inputText = ""
+            loading = false
+            glow = .idle
+            // Beat 2 (~0.3 s): bare frozen photo, NO bottom controls.
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            // Beat 3 (~0.34 s): the Ask / ✕ / Search bar fades in.
+            withAnimation(.easeInOut(duration: 0.34)) { dismissing = false }
         }
-        messagesJSON = []
-        errorText = nil
-        pendingRetry = nil
-        inputText = ""
-        loading = false
-        glow = .idle
     }
 
     private func unfreeze() {
         generation += 1
         controlsHidden = false
+        dismissing = false
         phase = .live
         frozenImage = nil
         frozenB64 = nil
@@ -305,7 +417,9 @@ struct ContentView: View {
         pendingRetry = nil
         inputText = ""
         glow = .idle
-        camera.start()
+        // no camera in the simulator/preview — the bundled still stands in for
+        // the live viewfinder, so starting a session there only trips "denied"
+        if !PreviewMode.active { camera.start() }
     }
 
     // the photo's blur+brighten breath during the capture light — part of the

@@ -92,3 +92,49 @@ jobs:
           name: Shidoku-screenshots
           path: shots/*.png
           retention-days: 30
+
+      # A motion VIDEO of the real animation code. Stills never caught the
+      # pill→card morph, the pill fade-in or the dismissal cascade, so motion
+      # bugs kept shipping. -shidokuSequence drives the actual state machine
+      # (fake local stream, no network) while the sim records. Reuses the
+      # simbuild app the screenshot step built; continue-on-error like it.
+      - name: Record motion video
+        continue-on-error: true
+        run: |
+          set -x
+          cd ios-native
+          APP="simbuild/Build/Products/Debug-iphonesimulator/Shidoku.app"
+
+          DEV=$(xcrun simctl list devicetypes | grep -oE 'iPhone (16e|14|13)' | head -1)
+          echo "device: $DEV"
+          UDID=$(xcrun simctl create shidoku-motion \
+            "com.apple.CoreSimulator.SimDeviceType.$(echo "$DEV" | tr ' ' '-')" || true)
+          if [ -z "$UDID" ]; then
+            UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];print([x['udid'] for v in d.values() for x in v][0])")
+          fi
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b || true
+          xcrun simctl install "$UDID" "$APP"
+          # otherwise the camera permission alert sits over the recording
+          xcrun simctl privacy "$UDID" grant camera com.pake.shidoku || true
+
+          mkdir -p ../motion
+          # recordVideo MUST be stopped with SIGINT to finalize the moov atom —
+          # a plain kill leaves a corrupt, unplayable file.
+          xcrun simctl io "$UDID" recordVideo --codec=h264 --force ../motion/shidoku.mp4 &
+          REC=$!
+          sleep 2                          # let the recorder spin up
+          # || true so a launch hiccup still reaches the SIGINT finalize below
+          xcrun simctl launch "$UDID" com.pake.shidoku -shidokuPreview -shidokuSequence || true
+          sleep 16                         # the scripted flow runs ~7 s; margin for launch
+          kill -INT "$REC" || true
+          sleep 3                          # let simctl flush the moov atom
+          xcrun simctl shutdown "$UDID" || true
+          ls -la ../motion
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Shidoku-motion
+          path: motion/*.mp4
+          retention-days: 30

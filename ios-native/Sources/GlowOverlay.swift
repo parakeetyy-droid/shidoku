@@ -18,6 +18,10 @@ enum GlowMode: Equatable {
 
 struct GlowOverlay: UIViewRepresentable {
     let mode: GlowMode
+    // PREVIEW-ONLY. Freeze the masses at their ignite peak so the CI capture
+    // still shows them at full strength (the live shot otherwise catches an
+    // arbitrary early frame). Never true in the shipped app; see PreviewMode.
+    var pinPeak: Bool = false
 
     func makeUIView(context: Context) -> ShidokuGlowView {
         let v = ShidokuGlowView()
@@ -26,7 +30,11 @@ struct GlowOverlay: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: ShidokuGlowView, context: Context) {
-        uiView.apply(mode)
+        if pinPeak {
+            uiView.pinAtIgnitePeak()
+        } else {
+            uiView.apply(mode)
+        }
     }
 }
 
@@ -64,6 +72,8 @@ final class ShidokuGlowView: UIView {
     private var blobs: [CAGradientLayer] = []
     private var builtSize = CGSize.zero
     private var pending: DispatchWorkItem?
+    private var wantPinPeak = false
+    private var didPinPeak = false
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -130,6 +140,35 @@ final class ShidokuGlowView: UIView {
         pauseClock()
     }
 
+    // MARK: - preview pin (screenshot harness only — never the live app)
+
+    // Hold the masses at the ignite peak so a still capture shows them at full
+    // strength. The live envelope peaks and fades in ~1 s, so a screenshot
+    // catches a weak arbitrary frame; the approved demo pins its 38% keyframe
+    // (0.38 × 1.15 s ≈ 0.44 s) at peak opacity, and this matches that. Nothing
+    // here runs unless GlowOverlay.pinPeak is set from PreviewMode.
+    func pinAtIgnitePeak() {
+        wantPinPeak = true
+        applyPinIfReady()
+    }
+
+    private func applyPinIfReady() {
+        guard wantPinPeak, !didPinPeak, !blobs.isEmpty else { return }
+        didPinPeak = true
+        // stamp each mass at its peak opacity with no implicit animation, and
+        // drop the drift/scale loops so the frame is static and deterministic
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (i, b) in blobs.enumerated() {
+            b.removeAllAnimations()
+            b.opacity = ShidokuGlowView.spots[i % ShidokuGlowView.spots.count].a
+        }
+        CATransaction.commit()
+        // freeze the layer clock at the demo's ignite-peak instant (as briefed)
+        layer.speed = 0.0
+        layer.timeOffset = 0.38 * 1.15
+    }
+
     private func scheduleIdle(after s: TimeInterval) {
         let w = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
@@ -189,6 +228,9 @@ final class ShidokuGlowView: UIView {
             addDrift(to: g, side: side)
         }
         if currentMode == .idle { pauseClock() }
+        // if a preview pin was requested before the blobs existed (or a
+        // re-layout rebuilt them), apply it now against the fresh blobs
+        if wantPinPeak { didPinPeak = false; applyPinIfReady() }
     }
 
     private func addDrift(to g: CAGradientLayer, side: CGFloat) {

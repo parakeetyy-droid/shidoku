@@ -11,10 +11,19 @@ import UIKit
 //
 // The camera does not exist in the simulator, so a bundled still stands in
 // for the viewfinder. Nothing here runs unless -shidokuPreview is passed.
+//
+// -shidokuSequence drives the REAL state machine through the whole ask flow
+// (freeze → bloom → pill → morph → stream → dismissal cascade → unfreeze) on a
+// scripted timeline with a FAKE local stream, so CI can record a motion video
+// of the actual animation code. Inert unless BOTH flags are present.
 
 enum PreviewMode {
     static let active: Bool =
         ProcessInfo.processInfo.arguments.contains("-shidokuPreview")
+
+    /// The scripted motion run for the CI video (see ContentView.runSequence).
+    static let sequence: Bool =
+        ProcessInfo.processInfo.arguments.contains("-shidokuSequence")
 
     /// live | capture | asking | answer | bare
     static var state: String {

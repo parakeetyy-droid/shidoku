@@ -33,6 +33,12 @@ struct AnswerCard: View {
     @State private var contentHeight: CGFloat = 0
     @State private var appeared = false
     @State private var copied = false
+    // The attribution row resolves LAST on the card's first materialize only
+    // (demo: opacity .26 s ease, .16 s after the entrance).
+    @State private var attribShown = false
+    // Armed after the first height measurement so streaming growth animates
+    // (liquid) while the entrance itself stays owned by the pill→card morph.
+    @State private var heightSettled = false
 
     private var maxCardHeight: CGFloat {
         UIScreen.main.bounds.height * 0.62
@@ -51,6 +57,7 @@ struct AnswerCard: View {
                         }
                     }
                     attribution
+                        .opacity(attribShown ? 1 : 0)
                     Color.clear.frame(height: 1).id("cardEnd")
                 }
                 .padding(VI.cardPadding)
@@ -61,12 +68,21 @@ struct AnswerCard: View {
                     }
                 )
             }
-            .onPreferenceChange(CardContentHeightKey.self) { contentHeight = $0 }
+            .onPreferenceChange(CardContentHeightKey.self) { h in
+                let firstMeasure = (contentHeight == 0)
+                contentHeight = h
+                // arm on the NEXT runloop so this first (entrance) measurement
+                // lands instantly and only later stream deltas animate
+                if firstMeasure { DispatchQueue.main.async { heightSettled = true } }
+            }
             .onChange(of: thread.last?.text ?? "") { _, _ in
                 proxy.scrollTo("cardEnd", anchor: .bottom)
             }
         }
         .frame(height: min(max(contentHeight, 60), maxCardHeight))
+        // streaming deltas grow the card in gentle steps instead of jumping;
+        // the 62% cap + inner scrolling still hold above it
+        .animation(heightSettled ? .smooth(duration: 0.25) : nil, value: contentHeight)
         .lightSurface(radius: VI.cardRadius)
         .overlay(alignment: .topTrailing) { copyButton }
         // no scaleEffect here — the pill→card matchedGeometryEffect already
@@ -76,10 +92,15 @@ struct AnswerCard: View {
         .onAppear {
             if UIAccessibility.isReduceMotionEnabled {
                 appeared = true
+                attribShown = true
             } else {
                 withAnimation(.spring(response: 0.42, dampingFraction: 0.8)) {
                     appeared = true
                 }
+                // resolves LAST: .26 s ease, .16 s after the entrance. onAppear
+                // fires once, so this is the first materialize only — stream
+                // deltas never re-run it.
+                withAnimation(.easeIn(duration: 0.26).delay(0.16)) { attribShown = true }
             }
         }
     }
@@ -91,8 +112,9 @@ struct AnswerCard: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { copied = false }
         } label: {
             Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(Color.black.opacity(0.45))
+                // softened toward the recording: regular weight, ~0.40 black
+                .font(.system(size: 17, weight: .regular))
+                .foregroundStyle(Color.black.opacity(0.40))
                 .padding(14)
         }
         .buttonStyle(PressScaleStyle())

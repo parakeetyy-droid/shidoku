@@ -48,15 +48,21 @@ struct LightSurface: ViewModifier {
                 // near-white tints it. Stacking these the other way round
                 // renders a flat opaque card — the photo must still bleed
                 // through as colour, as it does in the recording.
+                //
+                // Demo formula (approved HTML, measured 1:1 against the
+                // recording): backdrop blur(26px) saturate(1.55) under
+                // rgba(252,250,247, 0.80) — a STRONG warm white with the
+                // remaining photo bleed left SATURATED (colourful, not gray).
+                // .thinMaterial frosts LESS than .regularMaterial, so more of
+                // that colour survives; the ~0.70 white keeps the card light.
+                // History (LIQUID-GLASS.md): 0.30 white read GRAY — never below
+                // ~0.5. Goal: whiter card, more colourful (not more visible) bleed.
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .fill(.regularMaterial)
+                    .fill(.thinMaterial)
                     .overlay {
                         RoundedRectangle(cornerRadius: radius, style: .continuous)
-                            // 0.30 was too little: the first simulator shots
-                            // showed a GRAY card with the dark photo reading
-                            // straight through it, not VI's light warm card.
-                            .fill(Color(red: 252.0/255.0, green: 249.0/255.0, blue: 247.0/255.0)
-                                .opacity(0.58))
+                            .fill(Color(red: 252.0/255.0, green: 250.0/255.0, blue: 247.0/255.0)
+                                .opacity(0.70))
                     }
             }
             .environment(\.colorScheme, .light)
