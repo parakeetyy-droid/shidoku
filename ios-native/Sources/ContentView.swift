@@ -42,6 +42,10 @@ struct ContentView: View {
     // beat, then the bare bar fades in). Drives the opacity of both the card
     // and the bottom row so the three beats read the way the recording does.
     @State private var dismissing = false
+    // When the last capture bloom started (nil under Reduce Motion / no bloom).
+    // The Ask path reads it so the full ignite plays before the glow switches
+    // to breathing, instead of the two states coalescing into one render.
+    @State private var bloomStartedAt: Date?
 
     // The pill and the card are ONE object: frame analysis showed the pill
     // expanding in place into the card (~0.33 s, blur-to-sharp, no crossfade
@@ -266,26 +270,22 @@ struct ContentView: View {
         phase = .live
         glow = .idle
         Task { @MainActor in
-            // t≈1.0 s — the Ask tap. beginFrozen runs the SAME freeze path as a
-            // live capture (photo bloom, glow .bloom, controls-hidden dance);
-            // the bundled still stands in for the camera frame.
+            // t≈1.0 s — the Ask tap. This is the REAL Ask path: beginFrozen
+            // (photo bloom, glow .bloom, controls-hidden dance) then an
+            // immediate ask start. Production paces bloom→think itself now
+            // (F10, scheduleThinkingGlow), so there is NO manual hold — the full
+            // ignite plays and hands off to breathing on its own. The bundled
+            // still stands in for the camera frame.
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             beginFrozen(image: photo, b64: "preview")
             thread.append(ChatItem(role: .assistant, text: ""))   // as firstAsk does
             loading = true                                         // the pill fades in
+            scheduleThinkingGlow(gen: generation)                 // bloom → (~1.15 s) → think
 
-            // hold ~1 s so glow .bloom actually RENDERS (the apply(.bloom)
-            // ignite) before switching to .think — set back-to-back in one
-            // synchronous block the two @State writes coalesce into a single
-            // render and the ignite is skipped, exactly the kind of motion this
-            // video exists to catch.
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            glow = .think                                          // the glow breathes
-
-            // ~0.5 s later (≈+1.5 s after the Ask tap) — the fake stream. Same
-            // updateLastAssistant path as the relay; the first chunk flips
-            // showCard and triggers the pill→card morph.
-            try? await Task.sleep(nanoseconds: 500_000_000)
+            // ≈+1.5 s after the Ask tap — the fake stream (no network). The
+            // first chunk flips showCard and triggers the pill→card morph, well
+            // after the ignite has handed off to the breathing.
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
             var acc = ""
             for piece in Self.chunk(PreviewMode.cannedAnswer, into: 10) {
                 acc += piece
@@ -364,6 +364,10 @@ struct ContentView: View {
         dismissing = false
         bloomCount += 1
         glow = .bloom(bloomCount)
+        // stamp the ignite start so the Ask path (scheduleThinkingGlow) can let
+        // it finish before breathing; nil under Reduce Motion (glow suppressed,
+        // so no ignite to wait on — never a dead wait)
+        bloomStartedAt = UIAccessibility.isReduceMotionEnabled ? nil : Date()
         runPhotoBloom()
         if !UIAccessibility.isReduceMotionEnabled {
             controlsHidden = true
@@ -491,8 +495,12 @@ struct ContentView: View {
         loading = true
         errorText = nil
         pendingRetry = nil
-        glow = .think
         let gen = generation
+        // was `glow = .think` — on the Ask path freeze() set glow = .bloom in
+        // this SAME synchronous transaction, so .think overwrote it and the
+        // ~1.15 s ignite never rendered. Hand the breathing off through the
+        // pacer, which lets a fresh bloom play out first.
+        scheduleThinkingGlow(gen: gen)
         Task { @MainActor in
             do {
                 let result = try await RelayClient.stream(messages: messages) { accumulated in
@@ -512,6 +520,32 @@ struct ContentView: View {
             }
             loading = false
             glow = .idle
+        }
+    }
+
+    /// Move the glow to the thinking breathe. The Ask path just set glow =
+    /// .bloom in the same transaction as the ask start, so switching to .think
+    /// now would coalesce and skip the owner-settled ~1.15 s ignite. When a
+    /// FRESH bloom is in flight, hand off on a LATER transaction so .bloom
+    /// renders first; GlowMode's own `previous == .bloom` path then waits the
+    /// ignite out (~1 s) before breathing — the demo's capture → ~1150 ms →
+    /// thinking. Follow-ups and asks on an already-frozen photo have no fresh
+    /// bloom, so they breathe at once. GlowOverlay itself is untouched.
+    private func scheduleThinkingGlow(gen: Int) {
+        guard let started = bloomStartedAt,
+              Date().timeIntervalSince(started) < 0.4 else {
+            glow = .think                       // no fresh capture light — breathe now
+            return
+        }
+        bloomStartedAt = nil                    // consume this bloom
+        Task { @MainActor in
+            // let the .bloom transaction render (so apply(.bloom) actually runs)
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            // a dismiss / unfreeze / new capture bumps generation; a finished or
+            // failed request clears loading — either way, do NOT resurrect
+            // .think (the glow must settle to .idle, never stick in .think).
+            guard gen == generation, loading else { return }
+            glow = .think
         }
     }
 
