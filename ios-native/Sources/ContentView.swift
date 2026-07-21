@@ -541,13 +541,14 @@ struct ContentView: View {
     }
 
     /// Move the glow to the thinking breathe. The Ask path just set glow =
-    /// .bloom in the same transaction as the ask start, so switching to .think
-    /// now would coalesce and skip the owner-settled ~1.15 s ignite. When a
-    /// FRESH bloom is in flight, hand off on a LATER transaction so .bloom
-    /// renders first; GlowMode's own `previous == .bloom` path then waits the
-    /// ignite out (~1 s) before breathing — the demo's capture → ~1150 ms →
-    /// thinking. Follow-ups and asks on an already-frozen photo have no fresh
-    /// bloom, so they breathe at once. GlowOverlay itself is untouched.
+    /// .bloom in the same transaction as the ask start; setting .think now would
+    /// coalesce and skip .bloom, so the breathe would start from its dim phase
+    /// instead of igniting bright. When a FRESH bloom is in flight, hand off on
+    /// a LATER transaction so .bloom renders first (breathe ignites from the
+    /// BRIGHT peak) — .think then CONTINUES the same breathe with no restart, so
+    /// the light is seamless across bloom→think (build #23; the old ~1.15 s
+    /// handoff is gone). Follow-ups and asks on an already-frozen photo have no
+    /// fresh bloom, so they just start breathing at once.
     private func scheduleThinkingGlow(gen: Int) {
         guard let started = bloomStartedAt,
               Date().timeIntervalSince(started) < 0.4 else {
