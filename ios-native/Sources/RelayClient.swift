@@ -36,30 +36,54 @@ enum RelayError: LocalizedError {
 
 enum RelayClient {
 
-    // MARK: - address resolution (drift-proof, once per launch)
+    // MARK: - address resolution (per endpoint, once per launch)
 
-    // The relay's LAN IP drifts with DHCP (.102 -> .103 -> .102), so we probe
-    // an ordered candidate list (mDNS name first, last-known IP second) ONCE at
-    // launch and use the winner for both endpoints. A `static let` Task runs
-    // the probes exactly once; concurrent callers await the same result. If
-    // every probe fails we fall back to the first candidate and let the real
-    // request surface its own error, exactly as a bad address did before.
-    private static let resolution = Task<String, Never> { () -> String in
-        for base in Config.relayCandidates {
-            if await probeReachable(base) { return base }
-        }
-        return Config.relayCandidates.first ?? "http://PARAKEET.local:8790"
+    // Two relays, routed per endpoint. Resolved ONCE at launch by probing every
+    // candidate (LAN drifts with DHCP; the VPS is the public server) with a
+    // cheap GET /. A `static let` Task runs the probes exactly once; concurrent
+    // callers await the same result.
+    //   ASK  (/api/claude): LAN first (fast at home), VPS last (the only answer
+    //                       away from home).
+    //   LENS (/api/lens):   VPS first, always — only a PUBLIC frame URL is
+    //                       fetchable by Google, so a LAN frame is useless to
+    //                       it. LAN is the fallback (the link still opens the
+    //                       results page, just without the uploaded image).
+    // If nothing is reachable, ASK falls back to the first LAN candidate and the
+    // real request surfaces its own error, exactly as a bad address did before.
+    private struct Routes {
+        let ask: String
+        let lens: String
+        let lanFallback: String   // resolved LAN base, for the lens request-fallback
     }
 
-    /// Start resolving at launch so the winner is ready before the first Ask.
+    private static let resolution = Task<Routes, Never> { () -> Routes in
+        // probe every host once, concurrently — each a cheap GET /
+        let hosts = Config.relayCandidates + [Config.relayVPS]
+        var reachable = Set<String>()
+        await withTaskGroup(of: (String, Bool).self) { group in
+            for h in hosts { group.addTask { (h, await probeReachable(h)) } }
+            for await (h, ok) in group where ok { reachable.insert(h) }
+        }
+        let firstLAN = Config.relayCandidates.first ?? Config.relayVPS
+        let lanBase = Config.relayCandidates.first(where: { reachable.contains($0) }) ?? firstLAN
+        let lanUp = Config.relayCandidates.contains(where: { reachable.contains($0) })
+        let vpsUp = reachable.contains(Config.relayVPS)
+        return Routes(
+            ask: lanUp ? lanBase : (vpsUp ? Config.relayVPS : firstLAN),
+            lens: vpsUp ? Config.relayVPS : lanBase,
+            lanFallback: lanBase
+        )
+    }
+
+    /// Start resolving at launch so the routes are ready before the first Ask.
     static func warmUp() { _ = resolution }
 
-    private static func resolvedBase() async -> String { await resolution.value }
+    private static func routes() async -> Routes { await resolution.value }
 
     // Cheapest liveness probe the relay answers: a bare GET / returns 200
     // (server.py is a SimpleHTTPRequestHandler; the repo root has no index.html
-    // so it serves a directory listing — no brain, no side effects). ~2 s, then
-    // the next candidate.
+    // so it serves a directory listing — no brain, no side effects). 3 s each;
+    // all candidates are probed together at launch.
     private static func probeReachable(_ base: String) async -> Bool {
         guard let url = URL(string: base + "/") else { return false }
         var req = URLRequest(url: url)
@@ -99,7 +123,7 @@ enum RelayClient {
     // Streams one exchange; onDelta receives the ACCUMULATED text each time.
     static func stream(messages: [[String: Any]],
                        onDelta: @escaping (String) -> Void) async throws -> RelayResult {
-        guard let url = URL(string: await resolvedBase() + "/api/claude") else {
+        guard let url = URL(string: await routes().ask + "/api/claude") else {
             throw RelayError.stream("bad relay URL")
         }
         var req = URLRequest(url: url)
@@ -155,8 +179,24 @@ enum RelayClient {
     }
 
     // POST the frozen frame to /api/lens; returns the Google Lens results URL.
+    // Routes to the VPS first (only a PUBLIC frame URL is fetchable by Google);
+    // on any failure there, falls back to the LAN base — that link still opens
+    // the results page, just without the uploaded image (the old degraded
+    // behavior, better than a dead button).
     static func lensURL(imageB64: String) async throws -> URL {
-        guard let url = URL(string: await resolvedBase() + "/api/lens") else {
+        let r = await routes()
+        var bases = [r.lens]
+        if r.lanFallback != r.lens { bases.append(r.lanFallback) }
+        var lastError: Error = RelayError.stream("no lens route")
+        for base in bases {
+            do { return try await postLens(imageB64: imageB64, base: base) }
+            catch { lastError = error }
+        }
+        throw lastError
+    }
+
+    private static func postLens(imageB64: String, base: String) async throws -> URL {
+        guard let url = URL(string: base + "/api/lens") else {
             throw RelayError.stream("bad lens URL")
         }
         var req = URLRequest(url: url)
