@@ -131,6 +131,7 @@ struct AnswerCard: View {
                 case .heading(let s):
                     Text(Markdown.inline(s))
                         .font(.system(size: 13, weight: .semibold))
+                        .fontDesign(.serif)
                         .tracking(1.1)
                         .foregroundStyle(Color.black.opacity(0.5))
                         .padding(.top, 6)
@@ -140,11 +141,13 @@ struct AnswerCard: View {
                         Text(Markdown.inline(s))
                     }
                     .font(.system(size: 19))
+                    .fontDesign(.serif)
                     .foregroundStyle(inkColor)
                 case .paragraph(let s):
                     Text(Markdown.inline(s))
                         .font(.system(size: VI.cardTextSize))
-                        .lineSpacing(3)          // 19 pt SF + 3 ≈ the measured 26 pt line height
+                        .fontDesign(.serif)
+                        .lineSpacing(3)          // 19 pt serif + 3 ≈ the measured 26 pt line height
                         .foregroundStyle(inkColor)
                 }
             }
@@ -159,6 +162,7 @@ struct AnswerCard: View {
             Spacer(minLength: 40)
             Text(text)
                 .font(.system(size: 15))
+                .fontDesign(.serif)
                 .foregroundStyle(inkColor)
                 .padding(.horizontal, 13)
                 .padding(.vertical, 8)

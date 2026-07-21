@@ -7,8 +7,8 @@ import UIKit
 //   asking  — + light "Asking Claude…" pill top-center
 //   answer  — + light card pinned to the top, streaming, photo stays bright
 // Search opens Google results in an in-app sheet. The capture LIGHT is the
-// settled native glow (GlowOverlay); the photo blur/brighten breath rides
-// with it.
+// settled native glow (GlowOverlay); the photo freezes CRISP — only the glow
+// signals capture (build #24; the blur/brighten breath was removed, owner order).
 
 struct ContentView: View {
     @StateObject private var camera = CameraController()
@@ -18,8 +18,6 @@ struct ContentView: View {
 
     @State private var frozenImage: UIImage?
     @State private var frozenB64: String?
-    @State private var frozenBlur: CGFloat = 0
-    @State private var frozenBright: Double = 0
 
     @State private var glow = GlowMode.idle
     @State private var bloomCount = 0
@@ -98,8 +96,6 @@ struct ContentView: View {
                         .scaledToFill()
                         .frame(width: geo.size.width, height: geo.size.height)
                         .clipped()
-                        .blur(radius: frozenBlur)
-                        .brightness(frozenBright)
                 }
                 .ignoresSafeArea()
             }
@@ -253,8 +249,7 @@ struct ContentView: View {
         case "capture":
             frozenImage = photo; phase = .frozen
             bloomCount += 1; glow = .bloom(bloomCount)
-            frozenBlur = 9; frozenBright = 0.16      // pinned at the bloom's peak
-            controlsHidden = true                    // on-device the bar is hidden during the bloom
+            controlsHidden = true                    // on-device the bar is hidden during the capture
         case "asking":
             frozenImage = photo; phase = .frozen
             loading = true; glow = .think
@@ -279,7 +274,7 @@ struct ContentView: View {
         glow = .idle
         Task { @MainActor in
             // t≈1.0 s — the Ask tap. This is the REAL Ask path: beginFrozen
-            // (photo bloom, glow .bloom, controls-hidden dance) then an
+            // (glow .bloom, controls-hidden dance) then an
             // immediate ask start. Production paces bloom→think itself now
             // (F10, scheduleThinkingGlow), so there is NO manual hold — the full
             // ignite plays and hands off to breathing on its own. The bundled
@@ -385,7 +380,6 @@ struct ContentView: View {
         // it finish before breathing; nil under Reduce Motion (glow suppressed,
         // so no ignite to wait on — never a dead wait)
         bloomStartedAt = UIAccessibility.isReduceMotionEnabled ? nil : Date()
-        runPhotoBloom()
         if !UIAccessibility.isReduceMotionEnabled {
             controlsHidden = true
             Task { @MainActor in
@@ -430,8 +424,6 @@ struct ContentView: View {
         phase = .live
         frozenImage = nil
         frozenB64 = nil
-        frozenBlur = 0
-        frozenBright = 0
         thread = []
         messagesJSON = []
         errorText = nil
@@ -441,25 +433,6 @@ struct ContentView: View {
         // no camera in the simulator/preview — the bundled still stands in for
         // the live viewfinder, so starting a session there only trips "denied"
         if !PreviewMode.active { camera.start() }
-    }
-
-    // the photo's blur+brighten breath during the capture light — part of the
-    // settled wave motion (peaks ~230 ms in, settles crisp by ~1.05 s)
-    private func runPhotoBloom() {
-        guard !UIAccessibility.isReduceMotionEnabled else { return }
-        frozenBlur = 0
-        frozenBright = 0
-        withAnimation(.easeOut(duration: 0.23)) {
-            frozenBlur = 9
-            frozenBright = 0.16
-        }
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 230_000_000)
-            withAnimation(.easeInOut(duration: 0.82)) {
-                frozenBlur = 0
-                frozenBright = 0
-            }
-        }
     }
 
     // MARK: - asking

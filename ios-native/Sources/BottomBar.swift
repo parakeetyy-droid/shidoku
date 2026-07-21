@@ -2,8 +2,8 @@ import SwiftUI
 
 // The idle bar — geometry is the owner-approved canon measured from his real
 // VI recording: 48 pt dark glass discs with filled white glyphs, 15 pt
-// labels, 78 pt shutter with ONE soft hue drifting on its ring (10 s/cycle),
-// padding 26/56/24, no scrim. Material is now real system Liquid Glass.
+// labels, 78 pt shutter with a static Claude-terracotta ring, padding
+// 26/56/24, no scrim. Material is now real system Liquid Glass.
 
 struct PressScaleStyle: ButtonStyle {
     var scale: CGFloat = 0.9
@@ -50,7 +50,6 @@ struct SideButton: View {
 
 struct ShutterButton: View {
     let action: () -> Void
-    @State private var hueAngle: Double = 0
 
     var body: some View {
         Button(action: action) {
@@ -59,20 +58,20 @@ struct ShutterButton: View {
                 // the owner-settled anatomy, and what the reference frames
                 // show. The first simulator shot proved the old radial-glow
                 // version read as one soft halo with no ring and no gap.
-                // One hue at a time, drifting (Apple's own ring shifts too).
+                // Static Claude terracotta — the accent, not a flood (the
+                // drifting hue ring is gone, build #24).
                 Circle()
-                    .strokeBorder(Color(hue: 0.628, saturation: 0.46, brightness: 0.97).opacity(0.95),
+                    .strokeBorder(Color(red: 217.0/255.0, green: 119.0/255.0, blue: 87.0/255.0),
                                   lineWidth: 2)
                     .frame(width: 78, height: 78)
-                    .shadow(color: Color(hue: 0.628, saturation: 0.46, brightness: 0.97).opacity(0.45),
+                    .shadow(color: Color(red: 217.0/255.0, green: 119.0/255.0, blue: 87.0/255.0).opacity(0.35),
                             radius: 5)
-                    .hueRotation(.degrees(hueAngle))
-                // flat pale core with a soft top-left light
+                // flat warm-ivory core with a soft top-left light
                 Circle()
                     .fill(RadialGradient(
                         gradient: Gradient(colors: [
-                            Color(red: 244.0/255.0, green: 242.0/255.0, blue: 239.0/255.0),
-                            Color(red: 218.0/255.0, green: 215.0/255.0, blue: 211.0/255.0)
+                            Color(red: 244.0/255.0, green: 241.0/255.0, blue: 233.0/255.0),
+                            Color(red: 226.0/255.0, green: 221.0/255.0, blue: 208.0/255.0)
                         ]),
                         center: UnitPoint(x: 0.35, y: 0.28), startRadius: 0, endRadius: 46))
                     .frame(width: 64, height: 64)
@@ -81,12 +80,6 @@ struct ShutterButton: View {
             .frame(width: 78, height: 78)
         }
         .buttonStyle(PressScaleStyle(scale: 0.95))
-        .onAppear {
-            guard !UIAccessibility.isReduceMotionEnabled else { return }
-            withAnimation(.linear(duration: 10).repeatForever(autoreverses: false)) {
-                hueAngle = 360
-            }
-        }
     }
 }
 

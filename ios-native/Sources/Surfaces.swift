@@ -31,7 +31,7 @@ enum VI {
     static let ink = Color.black.opacity(0.86)
     static let placeholder = Color(red: 142.0/255.0, green: 142.0/255.0, blue: 147.0/255.0)
     static let pillInk = Color(red: 58.0/255.0, green: 58.0/255.0, blue: 60.0/255.0)
-    static let brand = Color(red: 200.0/255.0, green: 97.0/255.0, blue: 63.0/255.0)
+    static let brand = Color(red: 217.0/255.0, green: 119.0/255.0, blue: 87.0/255.0)
 }
 
 // The light post-capture surface: a warm near-white over a heavy blur of the

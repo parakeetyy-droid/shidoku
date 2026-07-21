@@ -97,8 +97,10 @@ file-input capture=environment is the no-camera fallback.
   centered ON the screen border (screen-blended, falloff bleeding ~35%
   inward), igniting staggered over ~1.1 s on capture, breathing
   desynchronized while thinking, colors reshuffled every capture, layer
-  clock paused when idle. The photo's blur+brighten breath lives in
-  ContentView.runPhotoBloom. Reduce Motion suppresses all of it. The
+  clock paused when idle. The photo's blur+brighten breath (once
+  ContentView.runPhotoBloom) was removed on owner order in build #24 — the
+  blur on capture read as weird, so the photo now freezes CRISP and only the
+  glow signals capture. Reduce Motion still suppresses the glow. The
   `spots` table is the tuning surface if he ever reopens the subject.
 - **Post-capture UI (native rebuild, build #12+)**: cloned from the owner's
   recording, measured in `Desktop\shidoku\UI-ANALYSIS.md` — light top card
