@@ -167,6 +167,7 @@ struct ContentView: View {
             }
             camera.start()
             glow = .hello
+            RelayClient.warmUp()   // resolve the relay address now, before the first Ask
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
@@ -303,6 +304,15 @@ struct ContentView: View {
             // back to the live viewfinder
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             unfreeze()
+
+            // W3 — a SECOND ignite in the same film, shutter-style (NO ask), so
+            // the two capture choreographies can be compared frame-by-frame and
+            // W1's per-capture randomness is visible. bloomCount is now 2, so
+            // this ignite is seeded differently from the first. beginFrozen
+            // alone plays the bloom and lands on the bare Ask/✕/Search bar.
+            try? await Task.sleep(nanoseconds: 900_000_000)   // ≈t7.0 s: shutter tap
+            beginFrozen(image: photo, b64: "preview")
+            try? await Task.sleep(nanoseconds: 3_000_000_000) // ≈t10 s: hold on the bare bar
         }
     }
 

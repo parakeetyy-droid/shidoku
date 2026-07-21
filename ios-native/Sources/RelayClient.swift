@@ -36,6 +36,44 @@ enum RelayError: LocalizedError {
 
 enum RelayClient {
 
+    // MARK: - address resolution (drift-proof, once per launch)
+
+    // The relay's LAN IP drifts with DHCP (.102 -> .103 -> .102), so we probe
+    // an ordered candidate list (mDNS name first, last-known IP second) ONCE at
+    // launch and use the winner for both endpoints. A `static let` Task runs
+    // the probes exactly once; concurrent callers await the same result. If
+    // every probe fails we fall back to the first candidate and let the real
+    // request surface its own error, exactly as a bad address did before.
+    private static let resolution = Task<String, Never> { () -> String in
+        for base in Config.relayCandidates {
+            if await probeReachable(base) { return base }
+        }
+        return Config.relayCandidates.first ?? "http://PARAKEET.local:8790"
+    }
+
+    /// Start resolving at launch so the winner is ready before the first Ask.
+    static func warmUp() { _ = resolution }
+
+    private static func resolvedBase() async -> String { await resolution.value }
+
+    // Cheapest liveness probe the relay answers: a bare GET / returns 200
+    // (server.py is a SimpleHTTPRequestHandler; the repo root has no index.html
+    // so it serves a directory listing — no brain, no side effects). ~2 s, then
+    // the next candidate.
+    private static func probeReachable(_ base: String) async -> Bool {
+        guard let url = URL(string: base + "/") else { return false }
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.timeoutInterval = 2
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        do {
+            let (_, resp) = try await URLSession.shared.data(for: req)
+            return (resp as? HTTPURLResponse)?.statusCode == 200
+        } catch {
+            return false
+        }
+    }
+
     static func imageBlock(base64 jpeg: String) -> [String: Any] {
         [
             "type": "image",
@@ -57,7 +95,9 @@ enum RelayClient {
     // Streams one exchange; onDelta receives the ACCUMULATED text each time.
     static func stream(messages: [[String: Any]],
                        onDelta: @escaping (String) -> Void) async throws -> RelayResult {
-        guard let url = URL(string: Config.relay) else { throw RelayError.stream("bad relay URL") }
+        guard let url = URL(string: await resolvedBase() + "/api/claude") else {
+            throw RelayError.stream("bad relay URL")
+        }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -112,7 +152,9 @@ enum RelayClient {
 
     // POST the frozen frame to /api/lens; returns the Google Lens results URL.
     static func lensURL(imageB64: String) async throws -> URL {
-        guard let url = URL(string: Config.lens) else { throw RelayError.stream("bad lens URL") }
+        guard let url = URL(string: await resolvedBase() + "/api/lens") else {
+            throw RelayError.stream("bad lens URL")
+        }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")

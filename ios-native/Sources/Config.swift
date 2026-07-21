@@ -1,10 +1,17 @@
 import Foundation
 
 // ═══════════════ config — edit freely ═══════════════
-// The relay is the PC on home Wi-Fi for now, the VPS later. One constant.
+// The relay is the PC on home Wi-Fi for now, the VPS later.
 enum Config {
-    static let relay = "http://192.168.0.103:8790/api/claude"
-    static var lens: String { relay.replacingOccurrences(of: "/claude", with: "/lens") }
+    // Drift-proof addressing. The PC's DHCP lease has drifted .102 -> .103 ->
+    // .102, and a hard-coded IP means every Ask/Search dies the moment it
+    // moves. The mDNS name PARAKEET.local survives the drift, so it is tried
+    // FIRST; the last-known IP is the fallback. RelayClient probes these once
+    // per launch and uses the winner for both /api/claude and /api/lens.
+    static let relayCandidates = [
+        "http://PARAKEET.local:8790",
+        "http://192.168.0.102:8790",
+    ]
     static let maxTokens = 4000
     // Frames are downscaled before upload — fewer vision tokens = faster
     // first word. Measured; don't raise without re-measuring.
