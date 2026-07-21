@@ -40,11 +40,18 @@ final class CameraController: NSObject, ObservableObject, AVCaptureVideoDataOutp
         guard !configured else { return }
         configured = true
         session.beginConfiguration()
-        session.sessionPreset = .photo
+        // A VIDEO preset, NOT .photo. .photo drives the sensor in a high-res
+        // still mode whose live pipeline (the preview layer AND the data output)
+        // runs at a low, variable frame rate — the cause of the sluggish
+        // viewfinder on device. 1080p is far more than grabFrame needs (it is
+        // downscaled to 1100 px) and streams a smooth 30 fps.
+        session.sessionPreset = session.canSetSessionPreset(.hd1920x1080) ? .hd1920x1080 : .high
+        var camera: AVCaptureDevice?
         if let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
            let input = try? AVCaptureDeviceInput(device: device),
            session.canAddInput(input) {
             session.addInput(input)
+            camera = device
         }
         let output = AVCaptureVideoDataOutput()
         output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
@@ -56,6 +63,27 @@ final class CameraController: NSObject, ObservableObject, AVCaptureVideoDataOutp
             if conn.isVideoRotationAngleSupported(90) { conn.videoRotationAngle = 90 }
         }
         session.commitConfiguration()
+        // Pin a steady 30 fps floor: cameras otherwise stretch frame duration in
+        // dim light for exposure, and nothing here guaranteed a floor. Done
+        // after commit, so the preset's format is the active one being locked.
+        if let camera = camera { lockFrameRate(camera, fps: 30) }
+    }
+
+    // Lock the live frame rate to a steady value (both bounds = fps), guarded to
+    // a format that actually offers it. Device-level, so it survives the preset.
+    private func lockFrameRate(_ device: AVCaptureDevice, fps: Double) {
+        let duration = CMTime(value: 1, timescale: CMTimeScale(fps))
+        guard device.activeFormat.videoSupportedFrameRateRanges.contains(where: {
+            $0.minFrameRate <= fps && fps <= $0.maxFrameRate
+        }) else { return }
+        do {
+            try device.lockForConfiguration()
+            device.activeVideoMinFrameDuration = duration
+            device.activeVideoMaxFrameDuration = duration
+            device.unlockForConfiguration()
+        } catch {
+            // leave the format's default frame rate if the device won't lock
+        }
     }
 
     func captureOutput(_ output: AVCaptureOutput,

@@ -16,7 +16,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.pake.shidoku
         PRODUCT_NAME: Shidoku
         MARKETING_VERSION: "2.0"
-        CURRENT_PROJECT_VERSION: "20"
+        CURRENT_PROJECT_VERSION: "21"
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "5.0"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -26,9 +26,9 @@ targets:
         CFBundleDisplayName: Shidoku
         # Written straight into the plist: the MARKETING_VERSION /
         # CURRENT_PROJECT_VERSION build settings never reached the built
-        # Info.plist, so the app carried no version. Build #20 = v2.0 (20).
+        # Info.plist, so the app carried no version. Build #21 = v2.0 (21).
         CFBundleShortVersionString: "2.0"
-        CFBundleVersion: "20"
+        CFBundleVersion: "21"
         UILaunchScreen: {}
         NSCameraUsageDescription: "Shidoku shows a live viewfinder and analyzes the photo you capture."
         NSLocalNetworkUsageDescription: "Shidoku connects to your own relay server on your home Wi-Fi."

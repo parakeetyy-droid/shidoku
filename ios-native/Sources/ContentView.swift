@@ -32,6 +32,11 @@ struct ContentView: View {
     @State private var pendingRetry: (() -> Void)?
 
     @State private var lensItem: LensItem?
+    // The Google sheet must OPEN at the full detent (the recording slides it
+    // straight up, no mid-stop); the peek exists only as a drag-down state.
+    // Without a selection binding SwiftUI opens at the smallest detent, so we
+    // bind this and reset it to .large on every present.
+    @State private var sheetDetent: PresentationDetent = .large
     @State private var toastText: String?
 
     // Bumped whenever the conversation is reset (capture / dismiss / unfreeze)
@@ -153,10 +158,12 @@ struct ContentView: View {
         .sheet(item: $lensItem) { item in
             // VI's Google sheet is draggable between a full detent (top ≈54 pt,
             // ~93% of the screen) and a low peek (top ≈743 pt, ~12%), both
-            // measured from the recording.
+            // measured from the recording. It OPENS full — the selection binding
+            // (reset to .large in openLens) makes that happen instead of the
+            // default smallest-detent present; the peek stays available to drag.
             SafariSheet(url: item.url)
                 .ignoresSafeArea()
-                .presentationDetents([.large, .fraction(0.14)])
+                .presentationDetents([.large, .fraction(0.14)], selection: $sheetDetent)
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(23)
         }
@@ -576,6 +583,7 @@ struct ContentView: View {
         Task { @MainActor in
             do {
                 let url = try await RelayClient.lensURL(imageB64: b64)
+                sheetDetent = .large        // always present at the full detent, not the last-dragged peek
                 lensItem = LensItem(url: url)
             } catch {
                 showToast("Search failed: " + error.localizedDescription)
