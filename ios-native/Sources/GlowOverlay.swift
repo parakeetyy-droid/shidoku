@@ -37,7 +37,7 @@ struct GlowOverlay: UIViewRepresentable {
 
     func updateUIView(_ uiView: ShidokuGlowView, context: Context) {
         if pinPeak {
-            uiView.pinAtPeak()
+            uiView.pinAtPeak(mode)
         } else {
             uiView.apply(mode)
         }
@@ -71,6 +71,10 @@ final class ShidokuGlowView: UIView {
     private var breathing = false
     private var wantPinPeak = false
     private var didPinPeak = false
+    // The real mode pinAtPeak was handed (the capture preview's .bloom(n)),
+    // recorded so the pinned state's currentMode is that true mode, never a
+    // fabricated count.
+    private var pinMode = GlowMode.idle
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -259,15 +263,16 @@ final class ShidokuGlowView: UIView {
 
     // Freeze the glow fully ON at the breathe peak (1.0) so the CI capture
     // still shows it at full strength. Deterministic; nothing animating.
-    func pinAtPeak() {
+    func pinAtPeak(_ mode: GlowMode) {
         wantPinPeak = true
+        pinMode = mode
         applyPinIfReady()
     }
 
     private func applyPinIfReady() {
         guard wantPinPeak, !didPinPeak, !glowLayers.isEmpty else { return }
         didPinPeak = true
-        currentMode = .bloom
+        currentMode = pinMode     // the real mode we were told to pin, not a bare .bloom
         pending?.cancel()
         pending = nil
         CATransaction.begin()
