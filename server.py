@@ -105,8 +105,12 @@ def _top_up_pool():
     message, so priming moves all of it off the user's first Ask."""
     try:
         p = spawn_claude()
+        # The prime CONTENT must never be an instruction: it stays in the
+        # process's conversation history, so the FIRST real Ask on this spare
+        # can obey a stale command (a genuine probe once answered "ok"). "."
+        # carries nothing to obey yet still triggers the CLI's lazy first-message init.
         p.stdin.write(json.dumps({"type": "user", "message":
-                                  {"role": "user", "content": "Reply with exactly: ok"}}) + "\n")
+                                  {"role": "user", "content": "."}}) + "\n")
         p.stdin.flush()
         deadline = time.time() + 60
         for raw in p.stdout:
