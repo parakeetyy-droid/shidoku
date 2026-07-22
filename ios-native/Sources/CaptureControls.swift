@@ -33,13 +33,18 @@ struct InputCapsuleRow: View {
             .lightSurface(radius: VI.capsuleHeight / 2)
 
             Button(action: onClose) {
-                // Demo-measured (demo_asking.png, 1pt=1px): on the 43 pt disc the
-                // approved ✕ spans ~11 pt arm-to-arm at ~1.06 pt stroke (CSS spec:
-                // 9.9 pt / 1.2 pt). SF xmark at 17 pt regular rendered ~13 pt / 1.58
-                // pt — too big and too heavy (owner: "the ratio is off"). 14 pt light
-                // lands ~10.7 pt arm / ~1.05 pt stroke: the demo's thin ✕.
+                // Owner overruled the demo's tiny ✕ with a fresh REAL Apple VI
+                // screenshot: the mark's arm-to-arm span is ~45% of the disc
+                // (~19 pt on this 43 pt disc), vs ~25% at build #25's 14 pt and
+                // ~30% at build #24's 17 pt. Bumped to 19 pt .light. By this
+                // project's measured SF-xmark constant (~0.765 pt arm per pt of
+                // font: 14 pt->10.7 pt, 17 pt->13 pt) that renders ~14.5 pt arm /
+                // ~34% - a real step up but short of 45%; ~25 pt would reach the
+                // owner's target. .light keeps the stroke ~1.43 pt (nearest the
+                // ~1.2 pt VI spec); .regular would render ~1.77 pt, reading heavy
+                // against the "thin but crisp" real mark.
                 Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .light))
+                    .font(.system(size: 19, weight: .light))
                     .foregroundStyle(.black)
                     .frame(width: VI.closeDiscSize, height: VI.closeDiscSize)
                     .lightSurface(radius: VI.closeDiscSize / 2)
