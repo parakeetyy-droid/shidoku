@@ -33,18 +33,18 @@ struct InputCapsuleRow: View {
             .lightSurface(radius: VI.capsuleHeight / 2)
 
             Button(action: onClose) {
-                // Owner overruled the demo's tiny ✕ with a fresh REAL Apple VI
-                // screenshot: the mark's arm-to-arm span is ~45% of the disc
-                // (~19 pt on this 43 pt disc), vs ~25% at build #25's 14 pt and
-                // ~30% at build #24's 17 pt. Bumped to 19 pt .light. By this
-                // project's measured SF-xmark constant (~0.765 pt arm per pt of
-                // font: 14 pt->10.7 pt, 17 pt->13 pt) that renders ~14.5 pt arm /
-                // ~34% - a real step up but short of 45%; ~25 pt would reach the
-                // owner's target. .light keeps the stroke ~1.43 pt (nearest the
-                // ~1.2 pt VI spec); .regular would render ~1.77 pt, reading heavy
-                // against the "thin but crisp" real mark.
+                // Owner's fresh REAL Apple VI screenshot is ground truth: the ✕'s
+                // arm-to-arm span is ~45% of the disc (~19 pt on this 43 pt disc),
+                // vs ~25% at build #25's 14 pt and ~30% at build #24's 17 pt.
+                // Sizing rule, stated so nobody re-derives it wrong: SF xmark
+                // renders its arm span at ~0.765 x the font point size, measured on
+                // this project (14 pt->10.7 pt, 17 pt->13 pt) - NOT 1:1. To hit the
+                // 45% target: 0.45 * 43 / 0.765 = 25 pt (0.765 x 25 = 19.1 pt arm =
+                // ~44.5%). Weight .thin: at 25 pt .thin holds the stroke ~1.4-1.5 pt,
+                // the real mark's large-but-thin read; .light would be ~1.9 pt and
+                // .regular ~2.3 pt, both too heavy for the crisp thin X.
                 Image(systemName: "xmark")
-                    .font(.system(size: 19, weight: .light))
+                    .font(.system(size: 25, weight: .thin))
                     .foregroundStyle(.black)
                     .frame(width: VI.closeDiscSize, height: VI.closeDiscSize)
                     .lightSurface(radius: VI.closeDiscSize / 2)
