@@ -76,12 +76,25 @@ jobs:
           # otherwise the camera permission alert sits over every screenshot
           xcrun simctl privacy "$UDID" grant camera com.pake.shidoku || true
 
+          # Pillow lets us catch a blank-white shot (the app hadn't drawn its
+          # first frame yet — the asking state did this once in #24). Best-effort
+          # install; if it fails, the raised settle below is the sole guard.
+          python3 -m pip install --quiet --disable-pip-version-check pillow || true
+
           mkdir -p ../shots
           for S in live capture asking answer bare; do
             xcrun simctl terminate "$UDID" com.pake.shidoku || true
             xcrun simctl launch "$UDID" com.pake.shidoku -shidokuPreview -shidokuState "$S"
-            sleep 4
+            sleep 6                         # settle raised from 4 (the first-frame race)
             xcrun simctl io "$UDID" screenshot "../shots/$S.png" || true
+            # retake ONCE if the shot is >95% near-white (the blank launch canvas).
+            # PIL missing or any error -> WHITE=0 -> no retake (settle is the guard).
+            WHITE=$(python3 -c "from PIL import Image; im=Image.open('../shots/$S.png').convert('RGB').resize((78,169)); px=list(im.getdata()); w=sum(1 for r,g,b in px if r>244 and g>244 and b>244); print(1 if w/len(px)>0.95 else 0)" 2>/dev/null || echo 0)
+            if [ "$WHITE" = "1" ]; then
+              echo "  $S came up blank-white; retaking after extra settle"
+              sleep 4
+              xcrun simctl io "$UDID" screenshot "../shots/$S.png" || true
+            fi
           done
           xcrun simctl shutdown "$UDID" || true
           ls -la ../shots

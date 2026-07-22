@@ -16,6 +16,21 @@ final class CameraController: NSObject, ObservableObject, AVCaptureVideoDataOutp
     private var configured = false
     private static let ciContext = CIContext()
 
+    // Live pinch-to-zoom (real Visual Intelligence supports it). The active
+    // device is held so a pinch can drive its videoZoomFactor; the current
+    // factor is the pinch baseline that carries between gestures and across
+    // captures within the session (it resets only on relaunch, when a fresh
+    // process reconfigures the device at 1.0). Only the LIVE viewfinder zooms —
+    // the frozen photo does not, and grabFrame captures the zoomed frame for
+    // free (data-output buffers already reflect videoZoomFactor).
+    private var device: AVCaptureDevice?
+    private let zoomLock = NSLock()
+    private var _zoom: CGFloat = 1.0
+    private static let maxZoomCap: CGFloat = 6.0
+    var currentZoom: CGFloat {
+        zoomLock.lock(); defer { zoomLock.unlock() }; return _zoom
+    }
+
     func start() {
         AVCaptureDevice.requestAccess(for: .video) { [weak self] ok in
             guard let self = self else { return }
@@ -52,6 +67,7 @@ final class CameraController: NSObject, ObservableObject, AVCaptureVideoDataOutp
            session.canAddInput(input) {
             session.addInput(input)
             camera = device
+            self.device = device
         }
         let output = AVCaptureVideoDataOutput()
         output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
@@ -83,6 +99,28 @@ final class CameraController: NSObject, ObservableObject, AVCaptureVideoDataOutp
             device.unlockForConfiguration()
         } catch {
             // leave the format's default frame rate if the device won't lock
+        }
+    }
+
+    // Ramp the live zoom toward `target`, clamped to 1.0…min(6, format max). All
+    // configuration happens on the camera queue under lockForConfiguration;
+    // ramp(toVideoZoomFactor:rate:) eases the change so a continuous pinch reads
+    // as smooth motion, not a jump. `rate` is in log2(zoom) per second — 16 is
+    // fast enough to track the fingers while staying eased. The committed factor
+    // is stored as the next pinch's baseline.
+    func setZoom(to target: CGFloat, rate: Float = 16) {
+        queue.async {
+            guard let device = self.device else { return }
+            let maxZ = min(CameraController.maxZoomCap, device.activeFormat.videoMaxZoomFactor)
+            let clamped = max(1.0, min(target, maxZ))
+            do {
+                try device.lockForConfiguration()
+                device.ramp(toVideoZoomFactor: clamped, withRate: rate)
+                device.unlockForConfiguration()
+                self.zoomLock.lock(); self._zoom = clamped; self.zoomLock.unlock()
+            } catch {
+                // if the device won't lock, keep the current zoom
+            }
         }
     }
 

@@ -50,6 +50,10 @@ struct ContentView: View {
     // to breathing, instead of the two states coalescing into one render.
     @State private var bloomStartedAt: Date?
 
+    // The zoom factor a live pinch started from (nil between pinches). Set on the
+    // first change of a gesture so the whole pinch scales from one baseline.
+    @State private var pinchAnchor: CGFloat?
+
     // The pill and the card are ONE object: frame analysis showed the pill
     // expanding in place into the card (~0.33 s, blur-to-sharp, no crossfade
     // and no gap). This namespace carries that geometry across the swap.
@@ -85,7 +89,12 @@ struct ContentView: View {
                     }
                     .ignoresSafeArea()
                 } else {
-                    CameraPreview(session: camera.session).ignoresSafeArea()
+                    CameraPreview(session: camera.session)
+                        .ignoresSafeArea()
+                        // Pinch-to-zoom the LIVE viewfinder (VI parity). The frozen
+                        // photo does not zoom, so the gesture rides only here; the
+                        // baseline carries between pinches via camera.currentZoom.
+                        .gesture(pinchToZoom)
                 }
             }
 
@@ -192,6 +201,16 @@ struct ContentView: View {
                 BottomBar(centre: .shutter,
                           onAsk: askTapped, onCentre: shutterTapped, onSearch: searchTapped)
             }
+        } else if controlsHidden {
+            // The capture-hide window (B2). askStarted flips the instant the Ask
+            // fires, but the row is mid fade-out — so without this it fades the
+            // NASCENT capsule instead of the bar the user tapped. Hold the
+            // outgoing shutter bar here (visually identical to the live bar, so
+            // the freeze swaps under it invisibly); it fades OUT, and the capsule
+            // or bare bar fades IN only once controlsHidden clears and the light
+            // has settled. Actions match the live bar so a swap is a no-op.
+            BottomBar(centre: .shutter,
+                      onAsk: askTapped, onCentre: shutterTapped, onSearch: searchTapped)
         } else if !askStarted {
             // BARE FROZEN — the third bar mode, measured from the recording:
             // photo held, Ask / ✕ / Search. Ask starts the flow, ✕ goes live.
@@ -201,13 +220,36 @@ struct ContentView: View {
             VStack(spacing: 6) {
                 if let err = errorText {
                     ErrorBar(message: err, onRetry: pendingRetry)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 InputCapsuleRow(text: $inputText,
                                 loading: loading,
                                 onSend: sendFollowUp,
                                 onClose: dismissAnswer)
             }
+            // the error row snapped in/out before; ease it so it doesn't jump the
+            // capsule (C2 — a visible flip that was missing its animation)
+            .animation(.easeInOut(duration: 0.2), value: errorText)
         }
+    }
+
+    // Live pinch-to-zoom. The anchor is the factor the gesture began at (the
+    // persisted baseline), captured on the first change so the whole pinch
+    // scales from one point; each change ramps the camera toward anchor ×
+    // magnification (CameraController clamps to 1…6). On end the anchor clears
+    // so the next pinch starts from wherever this one settled.
+    private var pinchToZoom: some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                let anchor = pinchAnchor ?? camera.currentZoom
+                if pinchAnchor == nil { pinchAnchor = anchor }
+                camera.setZoom(to: anchor * value.magnification)
+            }
+            .onEnded { value in
+                let anchor = pinchAnchor ?? camera.currentZoom
+                camera.setZoom(to: anchor * value.magnification)
+                pinchAnchor = nil
+            }
     }
 
     private var deniedOverlay: some View {
@@ -336,15 +378,18 @@ struct ContentView: View {
     // MARK: - capture flow
 
     private func askTapped() {
+        Haptics.impact(.light)
         guard freeze() else { return }
         firstAsk(extra: nil)
     }
 
     private func shutterTapped() {
+        Haptics.impact(.light)
         _ = freeze()
     }
 
     private func searchTapped() {
+        Haptics.impact(.light)
         guard freeze() else { return }
         openLens()
     }
@@ -364,6 +409,7 @@ struct ContentView: View {
     /// preview sequence supplies the bundled still (the simulator has no
     /// camera). Same animation code either way.
     private func beginFrozen(image: UIImage, b64: String) {
+        Haptics.impact(.medium)   // the capture "thunk" as the photo freezes
         generation += 1
         frozenImage = image
         frozenB64 = b64
@@ -394,6 +440,7 @@ struct ContentView: View {
     /// return to the camera. Only the centre ✕ there goes live again, and the
     /// card never comes back.
     private func dismissAnswer() {
+        Haptics.impact(.light)   // the flow ✕ that clears the answer
         generation += 1
         // Beat 1 (~0.2 s): the card, the input capsule and the light ✕ fade out
         // TOGETHER. The data stays mounted so the capsule branch holds — without
@@ -492,9 +539,19 @@ struct ContentView: View {
         // pacer, which lets a fresh bloom play out first.
         scheduleThinkingGlow(gen: gen)
         Task { @MainActor in
+            // Coalesce deltas: AnswerCard re-parses the WHOLE answer with
+            // Markdown.blocks on every text change, so committing every raw delta
+            // is O(n²) over a long stream and hitches mid-answer. Throttle to at
+            // most one commit per ~50 ms (≤20 UI updates/sec); the first delta
+            // paints at once, and the post-loop commit below always lands the
+            // final full text. The parser is untouched, it just runs far less.
+            var lastCommit = Date.distantPast
             do {
                 let result = try await RelayClient.stream(messages: messages) { accumulated in
                     guard gen == generation else { return }
+                    let now = Date()
+                    guard now.timeIntervalSince(lastCommit) >= 0.05 else { return }
+                    lastCommit = now
                     updateLastAssistant(text: accumulated)
                 }
                 // the capture was dismissed or replaced while this was in

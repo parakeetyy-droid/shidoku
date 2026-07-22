@@ -33,8 +33,13 @@ struct InputCapsuleRow: View {
             .lightSurface(radius: VI.capsuleHeight / 2)
 
             Button(action: onClose) {
+                // Demo-measured (demo_asking.png, 1pt=1px): on the 43 pt disc the
+                // approved ✕ spans ~11 pt arm-to-arm at ~1.06 pt stroke (CSS spec:
+                // 9.9 pt / 1.2 pt). SF xmark at 17 pt regular rendered ~13 pt / 1.58
+                // pt — too big and too heavy (owner: "the ratio is off"). 14 pt light
+                // lands ~10.7 pt arm / ~1.05 pt stroke: the demo's thin ✕.
                 Image(systemName: "xmark")
-                    .font(.system(size: 17, weight: .regular))
+                    .font(.system(size: 14, weight: .light))
                     .foregroundStyle(.black)
                     .frame(width: VI.closeDiscSize, height: VI.closeDiscSize)
                     .lightSurface(radius: VI.closeDiscSize / 2)

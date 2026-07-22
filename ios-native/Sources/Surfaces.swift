@@ -1,4 +1,16 @@
 import SwiftUI
+import UIKit
+
+// Capture-feedback haptics (VI parity): light on a bar tap, medium on the
+// capture freeze, light on dismiss. Suppressed under the CI preview so the
+// screenshot/motion harness stays inert. UIImpactFeedbackGenerator is a no-op
+// on the simulator anyway; the guard makes that explicit and cheap.
+enum Haptics {
+    static func impact(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
+        guard !PreviewMode.active else { return }
+        UIImpactFeedbackGenerator(style: style).impactOccurred()
+    }
+}
 
 // Shared surfaces and metrics, taken from the HTML demo the owner approved
 // (Desktop\shidoku\demo\index.html) — which is itself measured 1:1 against
